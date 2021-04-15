@@ -1,0 +1,58 @@
+ h
+ o    1 oh2
+ c    2 co3         1 coh3
+ c    3 cc4         2 cco4          1 dih4
+ h    3 hc5         2 hco5          4 dih5
+ h    3 hc6         2 hco6          4 dih6
+ c    4 cc7         3 ccc7          2 dih7
+ h    4 hc8         3 hcc8          7 dih8
+ h    4 hc9         3 hcc9          7 dih9
+ c    7 cc10        4 ccc10         3 dih10
+ h    7 hc11        4 hcc11        10 dih11
+ h    7 hc12        4 hcc12        10 dih12
+ h   10 hc13        7 hcc13         4 dih13
+ h   10 hc14        7 hcc14        13 dih14
+ h   10 hc15        7 hcc15        13 dih15
+
+oh2         0.950
+co3         1.400
+coh3      109.471
+cc4         1.450
+cco4      109.471
+dih4      180.000
+hc5         1.089
+hco5      109.471
+dih5      120.000
+hc6         1.089
+hco6      109.471
+dih6      240.000
+cc7         1.450
+ccc7      109.471
+dih7      180.000
+hc8         1.089
+hcc8      109.471
+dih8      120.000
+hc9         1.089
+hcc9      109.471
+dih9      240.000
+cc10        1.450
+ccc10     109.471
+dih10     180.000
+hc11        1.089
+hcc11     109.471
+dih11     120.000
+hc12        1.089
+hcc12     109.471
+dih12     240.000
+hc13        1.089
+hcc13     109.471
+dih13     180.000
+hc14        1.089
+hcc14     109.471
+dih14     120.000
+hc15        1.089
+hcc15     109.471
+dih15     240.000
+
+
+                          
