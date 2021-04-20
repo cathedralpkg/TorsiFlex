@@ -105,6 +105,7 @@ class InpVars():
           self._ttorsions    = None
           self._ntorsions    = 0
           self._tlimit       = None
+          self._vecR         = None
 
           # to add externally
           self._tatoms       = {}
@@ -455,10 +456,22 @@ class InpVars():
                         for idx,value in zip(nodefined,subvec): fvec[idx] = value
                         # add fvec to angles
                         angles.append( fvec )
-          # precond angles using deftor
+          # precond angles using default values
           else:
              lpredef = tuple([precond for precond in self._precond])
              angles  = [vec for vec in itertools.product(*lpredef)]
+          # Get closest to reference vector
+          try:
+            vecR = [int(ii) for ii in str(self._vecR).split("_")]
+            midx,mindist = None,float("inf")
+            for idx,vec in enumerate(angles):
+                dist = 0.0
+                for aa,bb in zip(vecR,vec):
+                    dist += min((aa-bb)%360,(bb-aa)%360)
+                    if dist > mindist: break
+                if dist < mindist: midx,mindist = idx,dist
+            if midx is not None: angles = angles[midx:] + angles[0:midx]
+          except: pass
           #------------#
           # yield data #
           #------------#

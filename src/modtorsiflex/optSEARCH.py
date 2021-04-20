@@ -97,6 +97,9 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
     
     ntorsions = len(inpvars._ttorsions)
     lzmat,zmatvals,zmatatoms = zmat
+    # reference torsional vector
+    vecR = TorPESpoint(tfh.zmat2vec(zmatvals,inpvars._tic),inpvars._tlimit)
+    inpvars._vecR = vecR
 
     # Create folders
     try   : tfh.create_dir(inpvars._tmpll)
