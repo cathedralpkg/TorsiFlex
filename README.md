@@ -3,9 +3,9 @@
 ## About _TorsiFlex_
 
     Name of the Program: TorsiFlex
-    Program Version : 2021.1
-    Program Version Date: April 15, 2021
-    Manual  Version Date: April 15, 2021
+    Program Version : 2021.2
+    Program Version Date: May 04, 2021
+    Manual  Version Date: May 04, 2021
 
 _TorsiFlex_ is an user-friendly program written in Python 3.
 It was designed to seek the conformers of a given molecule by
@@ -20,7 +20,7 @@ D. Ferro-Costas and A. Fernández-Ramos, Front. Chem., 2020, 8:16.
 
 ## Licensing and Distribution 
 
-_TorsiFlex version 2021.1_
+_TorsiFlex version 2021.2_
 
 MIT LICENSE
 

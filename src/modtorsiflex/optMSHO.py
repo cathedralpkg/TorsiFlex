@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.1
+Version     : 2021.2
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -123,9 +123,6 @@ def classify_files(inpvars,cmatrix,case,dcorr):
        print(IBS2+"ERROR! No data inside %s\n"%folder)
        raise exc.END
 
-    natoms = len(symbols)
-    masses = fncs.symbols2masses(symbols)
-
     # Get reference point
     vec0    = str(dataconfs[0][0])
     Eref    = dataconfs[0][1]
@@ -215,7 +212,8 @@ def classify_files(inpvars,cmatrix,case,dcorr):
                          for col,length in zip(datainline,lengths))
         table2.append( datainline[0:2]+[dipole,rotcons] )
         # Add to QMSHO
-        add_to_qmsho = weight1*Qrv1[str(vec1)]*np.exp(-(V1_1-minV1)/pc.KB/inpvars._temps)
+  ###   add_to_qmsho = weight1*Qrv1[str(vec1)]*np.exp(-(V1_1-minV1)/pc.KB/inpvars._temps)
+        add_to_qmsho = weight1*Qrv1*np.exp(-(V1_1-minV1)/pc.KB/inpvars._temps)
         QMSHO += add_to_qmsho
         # preconditioned or stochastic?
         if log1.startswith("stoc"):

@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.1
+Version     : 2021.2
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -151,16 +151,16 @@ def str2interval(string,bint=False):
     # deal with negative values (for angles)
     final_intervals = []
     for phi1,phi2 in intervals:
-        if phi1 < 0.0 and phi2 < 0.0:
-            phi1 = phi1%360
-            phi2 = phi2%360
-            final_intervals.append( (phi1,phi2) )
-        elif phi1 < 0.0 and phi2 > 0.0:
-            phi1 = phi1%360
-            final_intervals.append( ( 0.0, phi2) )
-            final_intervals.append( (phi1,360.0) )
+        if   phi1 < 0.0 and phi2 < 0.0:
+             final_intervals.append( (phi1%360,phi2%360) )
+        elif phi1 < 0.0 and phi2 == 0.0:
+             final_intervals.append( (    0.0,0.0) )
+             final_intervals.append( (phi1%360,360.0) )
+        elif phi1 < 0.0 and phi2 >  0.0:
+             final_intervals.append( ( 0.0, phi2) )
+             final_intervals.append( (phi1%360,360.0) )
         else:
-            final_intervals.append( (phi1,phi2) )
+             final_intervals.append( (phi1,phi2) )
     # data as integers?
     if bint: final_intervals = [(int(round(p1)),int(round(p2))) for p1,p2 in final_intervals] 
     return final_intervals
@@ -275,43 +275,73 @@ def test_connectivity(lzmat,zmatvals,cfactor,cmatrix):
 def test_hessian():
     pass
 #--------------------------------------------------#
-def test_hconstraints(xcc,hconstr):
-    if hconstr is None or len(hconstr) == 0: return True
-    # check hard constraints
-    for ic,icdomain in hconstr:
-        # Get atoms
-        icatoms  = [int(at)-1 for at in ic.split("-")]
-        nicatoms = len(icatoms)
-        xyzs     = [fncs.xyz(xcc,at) for at in icatoms]
-        # calculate value in xcc
-        if   nicatoms == 2: icvalue =  fncs.distance(*xyzs)*ANGSTROM
-        elif nicatoms == 3: icvalue = np.rad2deg(fncs.angle(*xyzs)   )%360
-        elif nicatoms == 4: icvalue = np.rad2deg(fncs.dihedral(*xyzs))%360
-        else: raise Exception
+def test_hsconstraints(lzmat,zmatvals,constr,which="hard"):
+    if constr is None or len(constr) == 0: return True
+    # the xcc
+    xcc = None
+    # check constraints
+    for ic,icdomain in constr:
+        if ic in zmatvals:
+           icvalue = zmatvals[ic]
+           if icvalue < 0.0: icvalue = icvalue%360
+        else:
+           # Get atoms
+           icatoms  = [int(at)-1 for at in ic.split("-")]
+           nicatoms = len(icatoms)
+           # Get xcc for each atom
+           if xcc is None: xcc = intl.zmat2xcc(lzmat,zmatvals)
+           xyzs     = [fncs.xyz(xcc,at) for at in icatoms]
+           # calculate value in xcc
+           if   nicatoms == 2: icvalue =  fncs.distance(*xyzs)*ANGSTROM
+           elif nicatoms == 3: icvalue = np.rad2deg(fncs.angle(*xyzs)   )%360
+           elif nicatoms == 4: icvalue = np.rad2deg(fncs.dihedral(*xyzs))%360
+           else: raise Exception
         # in domain?
         boolean = fncs.float_in_domain(icvalue,icdomain)
-        if boolean is False: return False
-    # all of them are fulfilled
-    return True
+        if which=="hard" and boolean is False: return False
+        if which=="soft" and boolean is True : return True
+    # (hard) all of them are fulfilled
+    if which=="hard": return True
+    # (soft) all of them failed
+    if which=="soft": return False
 #--------------------------------------------------#
-def test_sconstraints(xcc,sconstr):
-    if sconstr is None or len(sconstr) == 0: return True
-    # check soft constraints
-    for ic,icdomain in sconstr:
-        # Get atoms
-        icatoms  = [int(at)-1 for at in ic.split("-")]
-        nicatoms = len(icatoms)
-        xyzs     = (fncs.xyz(xcc,at) for at in icatoms)
-        # calculate value in xcc
-        if   nicatoms == 2: icvalue = fncs.distance(*xyzs)*ANGSTROM
-        elif nicatoms == 3: icvalue = np.rad2deg(fncs.angle(*xyzs))
-        elif nicatoms == 4: icvalue = np.rad2deg(fncs.dihedral(*xyzs))%360
-        else: raise Exception
-        # in domain?
-        boolean = fncs.float_in_domain(icvalue,icdomain)
-        if boolean is True: return True
-    # all of them failed
-    return False
+##  def test_hconstraints(xcc,hconstr):
+##      if hconstr is None or len(hconstr) == 0: return True
+##      # check hard constraints
+##      for ic,icdomain in hconstr:
+##          # Get atoms
+##          icatoms  = [int(at)-1 for at in ic.split("-")]
+##          nicatoms = len(icatoms)
+##          xyzs     = [fncs.xyz(xcc,at) for at in icatoms]
+##          # calculate value in xcc
+##          if   nicatoms == 2: icvalue =  fncs.distance(*xyzs)*ANGSTROM
+##          elif nicatoms == 3: icvalue = np.rad2deg(fncs.angle(*xyzs)   )%360
+##          elif nicatoms == 4: icvalue = np.rad2deg(fncs.dihedral(*xyzs))%360
+##          else: raise Exception
+##          # in domain?
+##          boolean = fncs.float_in_domain(icvalue,icdomain)
+##          if boolean is False: return False
+##      # all of them are fulfilled
+##      return True
+##  #--------------------------------------------------#
+##  def test_sconstraints(xcc,sconstr):
+##      if sconstr is None or len(sconstr) == 0: return True
+##      # check soft constraints
+##      for ic,icdomain in sconstr:
+##          # Get atoms
+##          icatoms  = [int(at)-1 for at in ic.split("-")]
+##          nicatoms = len(icatoms)
+##          xyzs     = (fncs.xyz(xcc,at) for at in icatoms)
+##          # calculate value in xcc
+##          if   nicatoms == 2: icvalue = fncs.distance(*xyzs)*ANGSTROM
+##          elif nicatoms == 3: icvalue = np.rad2deg(fncs.angle(*xyzs))
+##          elif nicatoms == 4: icvalue = np.rad2deg(fncs.dihedral(*xyzs))%360
+##          else: raise Exception
+##          # in domain?
+##          boolean = fncs.float_in_domain(icvalue,icdomain)
+##          if boolean is True: return True
+##      # all of them failed
+##      return False
 #--------------------------------------------------#
 def precheck_geom(lzmat,zmatvals,cmatrix,inpvars):
     bools = [None,None,None,None]
@@ -320,13 +350,11 @@ def precheck_geom(lzmat,zmatvals,cmatrix,inpvars):
     # (b) in domain test
     vec = TorPESpoint([zmatvals[ic] for ic in inpvars._tic])
     bools[1] = vec.is_in_domain(inpvars._tdomain)
-    # the xcc and the vec
-    xcc = intl.zmat2xcc(lzmat,zmatvals)
     # (c) Hard constraints
-    try   : bools[2] = test_hconstraints(xcc,inpvars._hconstr)
+    try   : bools[2] = test_hsconstraints(lzmat,zmatvals,inpvars._hconstr,"hard")
     except: raise exc.ErrorHConstraint
     # (d) Soft constraints
-    try   : bools[3] = test_sconstraints(xcc,inpvars._sconstr)
+    try   : bools[3] = test_hsconstraints(lzmat,zmatvals,inpvars._sconstr,"soft")
     except: raise exc.ErrorSConstraint
     # return all comparisons
     return bools

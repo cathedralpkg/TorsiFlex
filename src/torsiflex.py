@@ -5,7 +5,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.1
+Version     : 2021.2
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -389,6 +389,7 @@ def main():
           sprint("No options were given! Use --help for more information",tvars.NIBS,1)
        raise exc.END
     inpvars,zmat,symbols,masses,cmatrix,lCH3,lNH2,ndummy = zmat_preparation(inpvars)
+
 
     # Enantiomers? Correlate numbering
     dcorr = None

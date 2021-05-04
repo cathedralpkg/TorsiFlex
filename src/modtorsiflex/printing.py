@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.1
+Version     : 2021.2
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -477,7 +477,8 @@ def print_nogauexe(keyGau):
 def print_mshotable(temps,QMSHO,QMSHO_pre,QMSHO_sto,freqscal):
     sprint("MSHO rovibrational partition function:",NIBS2)
     sprint()
-    sprint("Scale parameter for harmonic frequencies: %.4f"%freqscal,NIBS2+6)
+    sprint("- Calculated from vibrational zero-point energy",NIBS2+4)
+    sprint("- Scale parameter for harmonic frequencies: %.4f"%freqscal,NIBS2+4)
     sprint()
     sprint("-----------------------------------------------------",NIBS2+6)
     sprint("  T(K)  |   Qrv(MSHO)  | % precondit. | % stochastic ",NIBS2+6)

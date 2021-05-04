@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.1
+Version     : 2021.2
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -341,7 +341,33 @@ def status_from_log(logfile,cmatrix,inpvars):
 
 
 #==================================================#
+def prepare_log_data(logdata):
+    ch      = logdata[2]
+    mtp     = logdata[3]
+    symbols = logdata[4]
+    xcc     = logdata[5]
+    Fcc     = logdata[7]
+    V0      = logdata[8]
+    zmat    = logdata[10]
+    # MM freq files --> z-matrix not shown in output; so get it from input
+    if zmat is None: zmat = gau.zmat_from_loginp(folder+log)
+    # z-matrix?
+    if zmat is None:
+        print("WARNING: file %s does not contains z-matrix!"%(folder+log))
+        raise Exception
+    # data from zmat lines
+    (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmat)
+    # correct symbols (just in case)
+    symbols,atonums = fncs.symbols_and_atonums(symbols)
+    # Data without dummies
+    symbols_wo,xcc_wo = fncs.clean_dummies(symbols,xcc=list(xcc))
+    symbols_wo,Fcc_wo = fncs.clean_dummies(symbols,Fcc=list(Fcc))
+    # return data
+    return ch,mtp,V0,symbols,symbols_wo,xcc_wo,Fcc_wo,lzmat,zmatvals
+#--------------------------------------------------#
 def folder_data(folder,inpvars,fscal):
+    if inpvars._ts: fmode = -1
+    else          : fmode = 0
     # the log files
     logs = [fname for fname in os.listdir(folder) \
             if fname.endswith(".log")]
@@ -350,35 +376,15 @@ def folder_data(folder,inpvars,fscal):
     logs_stoc = [log for log in logs if "stoc." in log]
     logs = sorted(logs_prec)+sorted(logs_stoc)
     # Calculate partition functions at different temperatures
-    Qrv = {}
     for log in logs:
         name    = log.split(".")[1]
         point   = TorPESpoint(name,inpvars._tlimit)
+        # Read log file
         logdata = gau.read_gaussian_log(folder+log)
-        ch      = logdata[2]
-        mtp     = logdata[3]
-        symbols = logdata[4]
-        xcc     = logdata[5]
-        Fcc     = logdata[7]
-        V0      = logdata[8]
-        zmat    = logdata[10]
-
-        # MM freq files in Gaussian
-        if zmat is None:
-           zmat = gau.zmat_from_loginp(folder+log)
-
-        (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmat)
-
-        # correct symbols (just in case)
-        symbols,atonums = fncs.symbols_and_atonums(symbols)
-        # Data without dummies
-        symbols_wo,xcc_wo = fncs.clean_dummies(symbols,xcc=list(xcc))
-        symbols_wo,Fcc_wo = fncs.clean_dummies(symbols,Fcc=list(Fcc))
-
-        # z-matrix?
-        if zmat is None:
-            print("WARNING: file %s does not contains z-matrix!"%(folder+log))
-            continue
+        # prepare data
+        try   : logdata = prepare_log_data(logdata)
+        except: continue
+        ch,mtp,V0,symbols,symbols_wo,xcc_wo,Fcc_wo,lzmat,zmatvals = logdata
 
         # generate Molecule instance
         molecule = Molecule()
@@ -388,24 +394,27 @@ def folder_data(folder,inpvars,fscal):
         molecule.setvar(ch=ch,mtp=mtp)
         molecule.prepare()
         molecule.setup()
-        if inpvars._enantio and molecule._pgroup.lower() == "c1": weight = 2
-        else                                                    : weight = 1
         molecule.ana_freqs()
+
         # Calculate partition functions for the temperatures
-        qtot, V1, qis = molecule.calc_pfns(inpvars._temps)
+        qtot, V1, qis = molecule.calc_pfns(inpvars._temps,fmode=fmode)
         qtr,qrot,qvib,qele = qis
-        Qrv[str(point)] = np.array([xx*yy for xx,yy in zip(qrot,qvib)])
+        Qrv = np.array([xx*yy for xx,yy in zip(qrot,qvib)])
         # Calculate partition functions at target temperature
-        qtot, V1, qis = molecule.calc_pfns([inpvars._temp])
+        qtot, V1, qis = molecule.calc_pfns([inpvars._temp],fmode=fmode)
         # remove rotsigma for Gibbs
         gibbs = V1-pc.KB*inpvars._temp*np.log(qtot[0]*molecule._rotsigma)
+
         # imaginary frequency
         if   len(molecule._ccimag) == 0: ifreq = None
         elif len(molecule._ccimag) == 1: ifreq = [ifreq for ifreq,ivec in list(molecule._ccimag)][0]
         else                           : ifreq = None
-        #if len(molecule._ccimag) == 1: ifreq = molecule._ccimag[0][0]
-        #else                         : ifreq = None
-        # append data
+
+        # weight for this conformer
+        if inpvars._enantio and molecule._pgroup.lower() == "c1": weight = 2
+        else                                                    : weight = 1
+
+        # append and yield data
         conf_tuple = (point,V0,V1,gibbs,weight,Qrv,ifreq,lzmat,zmatvals,log)
         yield (conf_tuple,symbols)
 #==================================================#

@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.1
+Version     : 2021.2
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -43,8 +43,8 @@ values for some variables used in TorsiFlex
 #==========================================#
 PROGNAME      = "torsiflex.py"
 PROGNAMEnopy  = "TorsiFlex"
-VERSION       = "2021.1"
-DATE          = "2021-03-18"
+VERSION       = "2021.2"
+DATE          = "2021-05-04"
 PROGVER       = "v%s (%s)"%(VERSION,DATE)
 #------------------------------------------#
 # initial blank spaces to add to all print statements
