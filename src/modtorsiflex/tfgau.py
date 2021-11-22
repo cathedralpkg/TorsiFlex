@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  tfgau              |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -53,9 +53,9 @@ from   common.Molecule   import Molecule
 from   common.files      import mkdir_recursive
 from   common.Exceptions import ExeNotDef, ExeNotFound, LevelNotFound
 #--------------------------------------------------#
-import modtorsiflex.tfvars        as tvars
-import modtorsiflex.tfrw     as rw
-import modtorsiflex.tfhelper      as tfh
+import modtorsiflex.tfvars      as tvars
+import modtorsiflex.tfrw        as rw
+import modtorsiflex.tfhelper    as tfh
 from   modtorsiflex.tpespoint   import TorPESpoint
 #==================================================#
 
@@ -65,12 +65,12 @@ KEYGAU = "GauExe"
 #============================#
 #   TEMPLATES FOR GAUSSIAN   #
 #============================#
-gt_opt_min = '''%nproc=[nproc]
+gt_opt_min1 = '''%nproc=[nproc]
 %mem=[mem]
 #p [level]
-scf=(verytight)
+scf=(tight)
 iop(99/9=1,99/14=3)
-opt=([optmode],MaxCycles=200)
+opt=([optmode],tight,MaxCycles=200)
 
 --Optimization of minimum--
 
@@ -81,12 +81,28 @@ opt=([optmode],MaxCycles=200)
 
 '''
 #----------------------------#
-gt_opt_ts = '''%nproc=[nproc]
+gt_opt_min2 = '''%nproc=[nproc]
 %mem=[mem]
 #p [level]
 scf=(verytight)
 iop(99/9=1,99/14=3)
-opt=([optmode],calcfc,ts,noeigentest,MaxCycles=200)
+opt=([optmode],verytight,MaxCycles=200)
+
+--Optimization of minimum--
+
+[charge],[multipl]
+[zmat]
+[modred]
+[fccards]
+
+'''
+#----------------------------#
+gt_opt_ts1 = '''%nproc=[nproc]
+%mem=[mem]
+#p [level]
+scf=(tight)
+iop(99/9=1,99/14=3)
+opt=([optmode],tight,calcfc,ts,noeigentest,MaxCycles=200)
 
 --Optimization of transition state--
 
@@ -97,7 +113,37 @@ opt=([optmode],calcfc,ts,noeigentest,MaxCycles=200)
 
 '''
 #----------------------------#
-gt_freq = '''%nproc=[nproc]
+gt_opt_ts2 = '''%nproc=[nproc]
+%mem=[mem]
+#p [level]
+scf=(verytight)
+iop(99/9=1,99/14=3)
+opt=([optmode],verytight,calcfc,ts,noeigentest,MaxCycles=200)
+
+--Optimization of transition state--
+
+[charge],[multipl]
+[zmat]
+[modred]
+[fccards]
+
+'''
+#----------------------------#
+gt_freq1 = '''%nproc=[nproc]
+%mem=[mem]
+#p [level]
+scf=(tight)
+iop(99/9=1,99/14=3)
+freq=noraman
+
+--Frequency calculation--
+
+[charge],[multipl]
+[zmat]
+
+'''
+#----------------------------#
+gt_freq2 = '''%nproc=[nproc]
 %mem=[mem]
 #p [level]
 scf=(verytight)
@@ -113,21 +159,20 @@ freq=noraman
 #============================#
 
 
-
 #==================================================#
 def generate_templates():
     # Create folder for templates
     mkdir_recursive(tvars.DIRTEMPL)
     # write templates
     ngen = 0
-    for file_i, string_i in [(tvars.TEMPLMINOPTLL,gt_opt_min),\
-                             (tvars.TEMPLMINOPTHL,gt_opt_min),\
-                             (tvars.TEMPLMINFRQLL,gt_freq   ),\
-                             (tvars.TEMPLMINFRQHL,gt_freq   ),\
-                             (tvars.TEMPLTSOPTLL , gt_opt_ts),\
-                             (tvars.TEMPLTSOPTHL , gt_opt_ts),\
-                             (tvars.TEMPLTSFRQLL , gt_freq  ),\
-                             (tvars.TEMPLTSFRQHL , gt_freq  )]:
+    for file_i, string_i in [(tvars.TEMPLMINOPTLL,gt_opt_min1),\
+                             (tvars.TEMPLMINOPTHL,gt_opt_min2),\
+                             (tvars.TEMPLMINFRQLL,gt_freq1   ),\
+                             (tvars.TEMPLMINFRQHL,gt_freq2   ),\
+                             (tvars.TEMPLTSOPTLL , gt_opt_ts1),\
+                             (tvars.TEMPLTSOPTHL , gt_opt_ts2),\
+                             (tvars.TEMPLTSFRQLL , gt_freq1  ),\
+                             (tvars.TEMPLTSFRQHL , gt_freq2  )]:
         # check existency of files
         if os.path.exists(file_i): continue
         # create file
@@ -156,21 +201,22 @@ def fccards_from_log(log):
     gcc,Fcc = gau.read_gaussian_log(log)[6:8]
     return gau.get_fccards_string(gcc,Fcc)
 #--------------------------------------------------#
-def generate_gjf(template,i_mname,inpvars,lzmat,zmatvals,case,log_ll=None):
+def generate_gjf(template,i_mname,inpvars,lzmat,zmatvals,case,string_fccards=None):
     # Name of files/folders according to case
     if   case == "LL":
          dirtmp  = inpvars._tmpll
          dirsave = inpvars._dirll
          level   = inpvars._lowlevel
-         log_ll  = None
+         nproc   = "%i"%inpvars._nprocll
+         mem     = "%s"%inpvars._memll
     elif case == "HL":
          dirtmp  = inpvars._tmphl
          dirsave = inpvars._dirhl
          level   = inpvars._highlevel
+         nproc   = "%i"%inpvars._nprochl
+         mem     = "%s"%inpvars._memhl
     else             : raise Exception
     # variables of interest from inpvars
-    nproc   = "%i"%inpvars._nproc
-    mem     = "%s"%inpvars._mem
     charge  = "%i"%inpvars._charge
     multipl = "%i"%inpvars._multipl
     optmode = int(inpvars._optmode)
@@ -185,8 +231,8 @@ def generate_gjf(template,i_mname,inpvars,lzmat,zmatvals,case,log_ll=None):
 
     # (b.1) LL Hessian matrix 
     fccards = None
-    if inpvars._fccards and (log_ll is not None):
-       try   : fccards = fccards_from_log(log_ll)
+    if inpvars._fccards and (string_fccards is not None):
+       try   : fccards = string_fccards
        except: fccards = None
     # (b.2) Write Gaussian input file
     args   = (ifile,template,level,charge,multipl,nproc,mem,lzmat,zmatvals,optmode,tatoms,fccards)
@@ -246,18 +292,19 @@ def read_normal_log(ofile,inpvars,case):
     commands,comment,ch,mtp,symbols,xcc,gcc,Fcc,energy,statusFRQ,ozmat,level = logdata
     # it may happen that in FRQ calculation zmatrix is not found!
     try:
-       zmatvals = gau.convert_zmat(ozmat)[0][1]
+       lzmat,zmatvals,zmatatoms = gau.convert_zmat(ozmat)[0]
        # put angles in (0,360) (sometimes Gaussian returns an angle > 360)
        for ic in inpvars._tic: zmatvals[ic] %= 360
        # Save info
        vec  = TorPESpoint(tfh.zmat2vec(zmatvals,inpvars._tic),inpvars._tlimit)
     except:
-       zmatvals = None
-       vec      = None
+       zmatvals  = None
+       zmatatoms = None
+       vec       = None
     print("           energy (%s) = %.6f hartree"%(level,energy))
-    if statusFRQ >= 0: print("           num imag frq: %i"%statusFRQ)
     print("           final vector: %s"%str(vec))
-    return statusFRQ,vec,zmatvals
+    if statusFRQ >= 0: print("           num imag frq: %i"%statusFRQ)
+    return statusFRQ,vec,zmatvals,zmatatoms
 #--------------------------------------------------#
 def execute(template,i_mname,inpvars,lzmat,zmatvals,case,log_ll=None):
     '''
@@ -298,11 +345,12 @@ def execute(template,i_mname,inpvars,lzmat,zmatvals,case,log_ll=None):
     #-------------------#
     vec, statusFRQ = None, -1
     # Read output file
-    if statusOPT == 0: statusFRQ,vec,zmatvals = read_normal_log(ofile,inpvars,case)
-    # Update tracking file
-    return (ofile,statusOPT,statusFRQ,vec,zmatvals)
+    if statusOPT == 0: statusFRQ,vec,zmatvals,zmatatoms = read_normal_log(ofile,inpvars,case)
+    else             : zmatatoms = None
+    # return data
+    return (ofile,statusOPT,statusFRQ,vec,zmatvals,zmatatoms)
 #--------------------------------------------------#
-def status_from_log(logfile,cmatrix,inpvars):
+def status_from_log(logfile,inpvars):
     '''
     About statusOPT, it returns:
        * -1 if the calculation failed
@@ -329,7 +377,7 @@ def status_from_log(logfile,cmatrix,inpvars):
           statusFRQ = -1
           vec       = None
        else:
-          zmat,zmatvals,symbols = rw.data_from_zmat_lines(zmatlines)
+          (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmatlines)
           # put angles in (0,360) (sometimes Gaussian returns an angle > 360)
           for ic in inpvars._tic: zmatvals[ic] %= 360
           # final vector
@@ -346,6 +394,7 @@ def prepare_log_data(logdata):
     mtp     = logdata[3]
     symbols = logdata[4]
     xcc     = logdata[5]
+    gcc     = logdata[6]
     Fcc     = logdata[7]
     V0      = logdata[8]
     zmat    = logdata[10]
@@ -353,7 +402,7 @@ def prepare_log_data(logdata):
     if zmat is None: zmat = gau.zmat_from_loginp(folder+log)
     # z-matrix?
     if zmat is None:
-        print("WARNING: file %s does not contains z-matrix!"%(folder+log))
+        print("WARNING: file %s does not contains Z-matrix!"%(folder+log))
         raise Exception
     # data from zmat lines
     (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmat)
@@ -361,13 +410,79 @@ def prepare_log_data(logdata):
     symbols,atonums = fncs.symbols_and_atonums(symbols)
     # Data without dummies
     symbols_wo,xcc_wo = fncs.clean_dummies(symbols,xcc=list(xcc))
+    symbols_wo,gcc_wo = fncs.clean_dummies(symbols,gcc=list(gcc))
     symbols_wo,Fcc_wo = fncs.clean_dummies(symbols,Fcc=list(Fcc))
     # return data
-    return ch,mtp,V0,symbols,symbols_wo,xcc_wo,Fcc_wo,lzmat,zmatvals
+    return ch,mtp,V0,symbols,symbols_wo,xcc_wo,gcc_wo,Fcc_wo,lzmat,zmatvals
 #--------------------------------------------------#
-def folder_data(folder,inpvars,fscal):
+def get_imag_freq(log,fscal):
+    try:
+        # Read log file
+        logdata = gau.read_gaussian_log(log)
+        logdata = prepare_log_data(logdata)
+        ch,mtp,V0,symbols,symbols_wo,xcc_wo,gcc_wo,Fcc_wo,lzmat,zmatvals = logdata
+
+        # diagonalize Fcc
+        molecule = Molecule()
+        molecule.setvar(xcc=xcc_wo,Fcc=Fcc_wo,V0=V0)
+        molecule.setvar(fscal=fscal)
+        molecule.setvar(symbols=symbols_wo)
+        molecule.setvar(ch=ch,mtp=mtp)
+        molecule.prepare()
+        molecule.setup()
+        molecule.ana_freqs()
+        ifreq = molecule._ccimag[0][0]
+    except: ifreq = None
+    # return
+    return ifreq
+#--------------------------------------------------#
+def log_data(log,inpvars,fscal,folder="./"):
     if inpvars._ts: fmode = -1
     else          : fmode = 0
+    # name from log
+    name    = log.split(".")[-2]
+    point   = TorPESpoint(name,inpvars._tlimit)
+    # Read log file
+    logdata = gau.read_gaussian_log(folder+log)
+    # prepare data
+    logdata = prepare_log_data(logdata)
+    ch,mtp,V0,symbols,symbols_wo,xcc_wo,gcc_wo,Fcc_wo,lzmat,zmatvals = logdata
+
+    # string for fccards
+    string_fccards = gau.get_fccards_string(gcc_wo,Fcc_wo)
+
+    # generate Molecule instance
+    molecule = Molecule()
+    molecule.setvar(xcc=xcc_wo,Fcc=Fcc_wo,V0=V0)
+    molecule.setvar(fscal=fscal)
+    molecule.setvar(symbols=symbols_wo)
+    molecule.setvar(ch=ch,mtp=mtp)
+    molecule.prepare()
+    molecule.setup()
+    molecule.ana_freqs()
+
+    # Calculate partition functions for the temperatures
+    qtot, V1, qis = molecule.calc_pfns(inpvars._temps,fmode=fmode)
+    qtr,qrot,qvib,qele = qis
+    Qrv = np.array([xx*yy for xx,yy in zip(qrot,qvib)])
+    # Calculate partition functions at target temperature
+    qtot, V1, qis = molecule.calc_pfns([inpvars._temp],fmode=fmode)
+    # remove rotsigma for Gibbs
+    gibbs = V1-pc.KB*inpvars._temp*np.log(qtot[0]*molecule._rotsigma)
+
+    # imaginary frequency
+    if   len(molecule._ccimag) == 0: ifreq = None
+    elif len(molecule._ccimag) == 1: ifreq = [ifreq for ifreq,ivec in list(molecule._ccimag)][0]
+    else                           : ifreq = None
+
+    # weight for this conformer
+    if inpvars._enantio and molecule._pgroup.lower() == "c1": weight = 2
+    else                                                    : weight = 1
+    # pack and return data
+    conf_tuple = (point,V0,V1,gibbs,weight,Qrv,ifreq,lzmat,zmatvals,log)
+    return conf_tuple,symbols,string_fccards
+#--------------------------------------------------#
+def folder_data(folder,inpvars,fscal):
     # the log files
     logs = [fname for fname in os.listdir(folder) \
             if fname.endswith(".log")]
@@ -377,45 +492,8 @@ def folder_data(folder,inpvars,fscal):
     logs = sorted(logs_prec)+sorted(logs_stoc)
     # Calculate partition functions at different temperatures
     for log in logs:
-        name    = log.split(".")[1]
-        point   = TorPESpoint(name,inpvars._tlimit)
-        # Read log file
-        logdata = gau.read_gaussian_log(folder+log)
-        # prepare data
-        try   : logdata = prepare_log_data(logdata)
-        except: continue
-        ch,mtp,V0,symbols,symbols_wo,xcc_wo,Fcc_wo,lzmat,zmatvals = logdata
-
-        # generate Molecule instance
-        molecule = Molecule()
-        molecule.setvar(xcc=xcc_wo,Fcc=Fcc_wo,V0=V0)
-        molecule.setvar(fscal=fscal)
-        molecule.setvar(symbols=symbols_wo)
-        molecule.setvar(ch=ch,mtp=mtp)
-        molecule.prepare()
-        molecule.setup()
-        molecule.ana_freqs()
-
-        # Calculate partition functions for the temperatures
-        qtot, V1, qis = molecule.calc_pfns(inpvars._temps,fmode=fmode)
-        qtr,qrot,qvib,qele = qis
-        Qrv = np.array([xx*yy for xx,yy in zip(qrot,qvib)])
-        # Calculate partition functions at target temperature
-        qtot, V1, qis = molecule.calc_pfns([inpvars._temp],fmode=fmode)
-        # remove rotsigma for Gibbs
-        gibbs = V1-pc.KB*inpvars._temp*np.log(qtot[0]*molecule._rotsigma)
-
-        # imaginary frequency
-        if   len(molecule._ccimag) == 0: ifreq = None
-        elif len(molecule._ccimag) == 1: ifreq = [ifreq for ifreq,ivec in list(molecule._ccimag)][0]
-        else                           : ifreq = None
-
-        # weight for this conformer
-        if inpvars._enantio and molecule._pgroup.lower() == "c1": weight = 2
-        else                                                    : weight = 1
-
-        # append and yield data
-        conf_tuple = (point,V0,V1,gibbs,weight,Qrv,ifreq,lzmat,zmatvals,log)
+        conf_tuple,symbols,string_fccards = log_data(log,inpvars,fscal,folder)
+        #yield data
         yield (conf_tuple,symbols)
 #==================================================#
 

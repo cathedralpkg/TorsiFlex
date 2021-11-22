@@ -5,7 +5,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 *----------------------------------*
 | Program    :  torsiflex          |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/05/20 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 '''
@@ -51,6 +51,7 @@ import numpy as np
 import common.internal           as intl
 import common.fncs               as fncs
 import common.Exceptions         as exc
+import common.enantor            as enan
 from   common.pgs                import get_pgs
 #----------------------------------------------------------#
 import modtorsiflex.printing     as pp
@@ -58,7 +59,6 @@ import modtorsiflex.tfvars       as tvars
 import modtorsiflex.tfgau        as itf
 import modtorsiflex.tfhelper     as tfh
 import modtorsiflex.tfrw         as rw
-import modtorsiflex.enantor      as enan
 from   modtorsiflex.inpvars      import InpVars
 from   modtorsiflex.printing     import sprint
 #----------------------------------------------------------#
@@ -69,12 +69,10 @@ from   modtorsiflex.optREGEN     import regen_from_tmp
 from   modtorsiflex.optMSTOR     import gen_mstor
 #----------------------------------------------------------#
 
-OPTIONS__  = "help,version,inp,"
+OPTIONS__  = "help,version,inp,input,"
 OPTIONS__ += "prec,stoc,hlopt,"
 OPTIONS__ += "msho,mstor,"
-OPTIONS__ += "regen,"
-OPTIONS_   = "h,v"
-
+OPTIONS__ += "regen"
 
 #==================================================#
 def execute_code(function,args,string):
@@ -102,71 +100,148 @@ def print_error():
 def get_options_from_prompt():
     # Get user arguments (options)
     args = sys.argv[1:]
-    # The valid options
-    valid_args = ["--"+arg for arg in OPTIONS__.split(",")]+\
-                 [ "-"+arg for arg in OPTIONS_.split(",")]
-    # bools
-    argbools = {option:False for option in OPTIONS__.split(",")}
-    # Are they known?
-    current   = None
-    prec1     = None
-    prec2     = None
-    mode_hlopt = "0"
-    mode_msho  = "all"
-    mode_mstor = "all"
-    for arg in args:
-        if arg in valid_args: current = arg
-        # arguments for option --prec
-        elif current == "--prec" and not arg.startswith("-"):
-             try:
-                if   prec1 is None: prec1 = int(arg)
-                elif prec2 is None: prec2 = int(arg)
-             except:
-                sprint("arguments for --prec must be integers!!")
-                raise exc.END
-             continue
-        # argument for option --hlopt
-        elif current == "--hlopt" and not arg.startswith("-"):
-             if arg == "nocalc": mode_hlopt = "1"; continue
-             else: sprint("argument for --hlopt can only be 'nocalc'!!"); raise exc.END
-        # argument for option --msho
-        elif current == "--msho" and not arg.startswith("-"):
-             if   arg == "ll": mode_msho = "ll"; continue
-             elif arg == "hl": mode_msho = "hl"; continue
-             else: sprint("argument for --msho can only be 'll' ot 'hl'!!"); raise exc.END
-        # argument for option --mstor
-        elif current == "--mstor" and not arg.startswith("-"):
-             if   arg == "ll": mode_mstor = "ll"; continue
-             elif arg == "hl": mode_mstor = "hl"; continue
-             else: sprint("argument for --mstor can only be 'll' ot 'hl'!!"); raise exc.END
-
-        if not arg.startswith(""): continue
-        elif arg not in valid_args:
-             pp.print_unknown_option(arg,tvars.PROGNAME)
-             raise exc.END
-        argbools[arg[2:]] = True
-    # value for prec
-    if prec1 is None: prec1 = 1
-    if prec2 is None: prec2 = 1
-    if argbools["prec"]: argbools["prec"] = (max(prec1,prec2,1),max(min(prec1,prec2),1))
-    # value for hlopt, msho and mstor
-    if argbools["hlopt"] is not False: argbools["hlopt"] = mode_hlopt
-    if argbools["msho" ] is not False: argbools["msho" ] = mode_msho
-    if argbools["mstor"] is not False: argbools["mstor"] = mode_mstor
+    #--------------------#
+    # --version / --help #
+    #--------------------#
     # check if user asks for help
     if "-h" in args or "--help" in args:
-        argbools["help"] = True
         pp.print_welcome(tvars.PROGNAME)
         sprint(pp.HSTRING)
         raise exc.END
     # check if user asks for version
     if "-v" in args or "--version" in args:
-        argbools["version"] = True
         sprint(tvars.PROGNAME.split(".py")[0]+" "+tvars.PROGVER)
         raise exc.END
+
+    #--------------------#
+    # Re-order arguments #
+    #--------------------#
+    current = None
+    arguments = {}
+    for arg in args:
+        if arg.startswith("--"):
+           current = arg
+           arguments[current] = []
+        elif current is not None:
+           arguments[current].append(arg)
+
+    #-------------------------#
+    # Go argument by argument #
+    #-------------------------#
+    valid_args = ["--"+arg for arg in OPTIONS__.split(",")]
+    argbools   = {option:False for option in OPTIONS__.split(",")}
+    for argument,options in arguments.items():
+        # unknown option
+        if argument not in valid_args:
+           pp.print_unknown_option(arg,tvars.PROGNAME)
+           raise exc.END
+        # option was chosen
+        else: argbools[arg[2:]] = True
+        # ARGUMENT: --prec
+        if   argument == "--prec":
+            try:
+               if len(options) == 2: prec1,prec2 = options
+               else                : prec1,prec2 = 1,1
+               prec1,prec2 = int(prec1),int(prec2)
+               argbools["prec"] = (max(prec1,prec2,1),max(min(prec1,prec2),1))
+            except:
+               sprint("arguments for --prec must be integers!!")
+               raise exc.END
+        # ARGUMENT: --hlopt
+        elif argument == "--hlopt":
+            mode_hlopt  = "0"
+            lowerconformer = 0
+            upperconformer = float("inf")
+            try:
+               if "nocalc" in options:
+                   mode_hlopt = "1"
+                   options.remove("nocalc")
+               if len(options) == 2:
+                   lowerconformer,upperconformer = options
+                   lowerconformer = int(lowerconformer)
+                   upperconformer = int(upperconformer)
+               elif len(options) != 0: raise Exception
+               lowerconformer = min(lowerconformer,upperconformer)
+               upperconformer = max(lowerconformer,upperconformer)
+               argbools["hlopt"] = (mode_hlopt,lowerconformer,upperconformer)
+            except:
+               sprint("arguments for --hlopt must be 'nocalc' and/or two float numbers!!")
+               raise exc.END
+        # ARGUMENT: --msho
+        elif argument == "--msho":
+             mode_msho = "all"
+             if   "ll" in options: mode_msho = "ll"
+             elif "hl" in options: mode_msho = "hl"
+             elif len(options) != 0:
+                  sprint("argument for --msho can only be 'll' or 'hl'!!")
+                  raise exc.END
+             argbools["msho" ] = mode_msho
+        # ARGUMENT: --mstor
+        elif argument == "--mstor":
+             mode_mstor = "all"
+             if   "ll" in options: mode_mstor = "ll"
+             elif "hl" in options: mode_mstor = "hl"
+             elif len(options) != 0:
+                  sprint("argument for --mstor can only be 'll' or 'hl'!!")
+                  raise exc.END
+             argbools["mstor"] = mode_mstor
+
     pp.print_welcome(tvars.PROGNAME)
     pp.print_user_info()
     return argbools
+#   # The valid options
+#   # bools
+#   argbools = {option:False for option in OPTIONS__.split(",")}
+#   # Are they known?
+#   current   = None
+#   prec1     = None
+#   prec2     = None
+#   mode_hlopt = "0"
+#   mode_msho  = "all"
+#   mode_mstor = "all"
+#   for idx,arg in enumerate(args):
+#       if arg in valid_args: current = arg
+#       # arguments for option --prec
+#       elif current == "--prec" and not arg.startswith("-"):
+#            try:
+#               if   prec1 is None: prec1 = int(arg)
+#               elif prec2 is None: prec2 = int(arg)
+#            except:
+#               sprint("arguments for --prec must be integers!!")
+#               raise exc.END
+#            continue
+#       # argument for option --hlopt
+#       elif current == "--hlopt" and not arg.startswith("-"):
+#            if   arg == "nocalc": mode_hlopt = "1"; continue
+#            else: sprint("argument for --hlopt can only be 'nocalc'!!"); raise exc.END
+#       # argument for option --msho
+#       elif current == "--msho" and not arg.startswith("-"):
+#            if   arg == "ll": mode_msho = "ll"; continue
+#            elif arg == "hl": mode_msho = "hl"; continue
+#            else: sprint("argument for --msho can only be 'll' ot 'hl'!!"); raise exc.END
+#       # argument for option --mstor
+#       elif current == "--mstor" and not arg.startswith("-"):
+#            if   arg == "ll": mode_mstor = "ll"; continue
+#            elif arg == "hl": mode_mstor = "hl"; continue
+#            else: sprint("argument for --mstor can only be 'll' ot 'hl'!!"); raise exc.END
+
+#       if not arg.startswith(""): continue
+#       elif arg not in valid_args:
+#            pp.print_unknown_option(arg,tvars.PROGNAME)
+#            raise exc.END
+#       argbools[arg[2:]] = True
+
+#   # value for prec
+#   if prec1 is None: prec1 = 1
+#   if prec2 is None: prec2 = 1
+#   if argbools["prec"]: argbools["prec"] = (max(prec1,prec2,1),max(min(prec1,prec2),1))
+#   # value for hlopt, msho and mstor
+#   if argbools["hlopt"] is not False: argbools["hlopt"] = mode_hlopt
+#   if argbools["msho" ] is not False: argbools["msho" ] = mode_msho
+#   if argbools["mstor"] is not False: argbools["mstor"] = mode_mstor
+#   pp.print_welcome(tvars.PROGNAME)
+#   pp.print_user_info()
+#   return argbools
 #--------------------------------------------------#
 def deal_with_input(case="create"):
     # initialize InpVars object
@@ -284,6 +359,13 @@ def zmat_preparation(inpvars):
         sprint("       (%i) %s"%(count+1,frag_mformu),tvars.NIBS)
     sprint()
 
+    # pairs to be skipped
+    if inpvars._skipconn != []:
+       sprint("     - Pair(s) of atoms to be skipped in the connectivity test",tvars.NIBS)
+       for at1,at2 in inpvars._skipconn:
+           sprint("       (%s%i,%s%i)"%(symbols[at1],at1+1,symbols[at2],at2+1),tvars.NIBS)
+       sprint()
+
     # Get atoms of target torsions
     sprint("   * identifying target torsions in z-matrix...",tvars.NIBS)
     lzmat, zmatvals, zmatatoms = zmat
@@ -328,7 +410,6 @@ def zmat_preparation(inpvars):
         else             : sprint("They will be considered when using --mstor",tvars.NIBS+5)
         sprint()
 
-
     # Detect NH2 groups
     lNH2 = detect_nh2(cmatrix,symbols,lzmat,zmatvals,inpvars)
     if len(lNH2) != 0:
@@ -367,8 +448,12 @@ def main():
        raise exc.END
 
     # Input & Templates creation
-    if argsbools["inp"]: inpvars = deal_with_input(case="create"); raise exc.END
-    else               : inpvars = deal_with_input(case="read")
+    if argsbools["inp"] or argsbools["input"]:
+       inpvars = deal_with_input(case="create")
+       raise exc.END
+    else:
+       try   : inpvars = deal_with_input(case="read")
+       except: raise exc.END
 
     # No options selected & no zmatrix - print info
     if num_options == 0 and not os.path.exists(inpvars._zmatfile):
@@ -430,6 +515,12 @@ def main():
        sprint("WARNING! Dummy atoms detected! Keyword 'optmode' will be set to 0!!",tvars.NIBS,1)
        inpvars._optmode = 0
 
+    # dealing with TS?
+    if not inpvars._ts:
+       inpvars._ifqrangeLL = []
+       inpvars._ifqrangeHL = []
+
+
     #=========================#
     # Act according option(s) #
     #=========================#
@@ -439,36 +530,9 @@ def main():
        sprint("No options were given! Use --help for more information",tvars.NIBS,1)
        raise exc.END
 
-    if argsbools["hlopt"] == "1":
-       args = (inpvars,cmatrix,False)
-       execute_code(highlevel_reopt,args,"Generating High-Level input files")
-       raise exc.END
-
-    # --mstor: Generate mstor files
-    if argsbools["mstor"] in ["ll","all"]:
-       args = (inpvars,"ll",dcorr,lCH3)
-       execute_code(gen_mstor,args,"Generating MsTor input (LL)")
-    if argsbools["mstor"] in ["hl","all"]:
-       args = (inpvars,"hl",dcorr,lCH3)
-       execute_code(gen_mstor,args,"Generating MsTor input (HL)")
-    if argsbools["mstor"] is not False: raise exc.END
-
-    # --regen: Regerate data 
-    if argsbools["regen"]:
-       args = (inpvars,cmatrix)
-       execute_code(regen_from_tmp,args,"Regenerating domains")
-       raise exc.END
-
-    # --msho: Just checking
-    if argsbools["msho"] in ["ll","all"]:
-       argsLL = (inpvars,cmatrix,"LL",dcorr)
-       execute_code(classify_files,argsLL,"Low-Level MSHO partition functions")
-    if argsbools["msho"] in ["hl","all"]:
-       argsHL = (inpvars,cmatrix,"HL",dcorr)
-       execute_code(classify_files,argsHL,"High-Level MSHO partition functions")
-    if argsbools["msho"] is not False: raise exc.END
-
-    # LL search (+opt+freq)
+    #--------------------------#
+    # LL SEARCH (opt + search) #
+    #--------------------------#
     if argsbools["prec" ] is not False or argsbools["stoc"]:
         # Preconditioned search?
         inpvars._prec = argsbools["prec"]
@@ -500,10 +564,54 @@ def main():
              sprint("ERROR! Problem(s) when checking soft constraint(s)!\n",tvars.NIBS2)
              raise exc.END
 
-    # HL optimization+freq
-    if argsbools["hlopt"] == "0":
-        args = (inpvars,cmatrix,True)
-        execute_code(highlevel_reopt,args,"High-Level calculations")
+    #--------------------------#
+    #         MSHO  LL         #
+    #--------------------------#
+    if argsbools["msho"] in ["ll","all"]:
+       argsLL = (inpvars,cmatrix,"LL",dcorr)
+       execute_code(classify_files,argsLL,"Low-Level MSHO partition functions")
+
+    #--------------------------#
+    #         MSTOR LL         #
+    #--------------------------#
+    if argsbools["mstor"] in ["ll","all"]:
+       args = (inpvars,"ll",dcorr,lCH3)
+       execute_code(gen_mstor,args,"Generating MsTor input (LL)")
+
+    #--------------------------#
+    # HLOPT  (re-optimization) #
+    #--------------------------#
+    if argsbools["hlopt"] is not False:
+       mode_hlopt,lowerconformer,upperconformer = argsbools["hlopt"]
+       if   mode_hlopt == "0":
+          args = (inpvars,cmatrix,lowerconformer,upperconformer,True,lNH2)
+          execute_code(highlevel_reopt,args,"High-Level calculations")
+       elif mode_hlopt == "1":
+          args = (inpvars,cmatrix,lowerconformer,upperconformer,False,lNH2)
+          execute_code(highlevel_reopt,args,"Generating High-Level input files")
+          raise exc.END
+
+    #--------------------------#
+    #         MSHO  HL         #
+    #--------------------------#
+    if argsbools["msho"] in ["hl","all"]:
+       argsHL = (inpvars,cmatrix,"HL",dcorr)
+       execute_code(classify_files,argsHL,"High-Level MSHO partition functions")
+
+    #--------------------------#
+    #         MSTOR HL         #
+    #--------------------------#
+    if argsbools["mstor"] in ["hl","all"]:
+       args = (inpvars,"hl",dcorr,lCH3)
+       execute_code(gen_mstor,args,"Generating MsTor input (HL)")
+
+    #--------------------------#
+    # REGEN  (regenerate data) #
+    #--------------------------#
+    if argsbools["regen"]:
+       args = (inpvars,)
+       execute_code(regen_from_tmp,args,"Regenerating domains")
+       raise exc.END
 #==================================================#
 
 

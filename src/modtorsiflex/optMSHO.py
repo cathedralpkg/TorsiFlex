@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  optMSHO            |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -43,18 +43,20 @@ import os
 import numpy  as     np
 from   shutil import move
 #--------------------------------------------------#
-import common.fncs     as fncs
-import common.physcons as pc
+import common.fncs       as fncs
+import common.physcons   as pc
 import common.Exceptions as exc
-from   common.files    import mkdir_recursive
+from   common.files      import mkdir_recursive
 from   common.internal   import zmat2xcc
 from   common.Molecule   import Molecule
 #--------------------------------------------------#
-import modtorsiflex.tfgau   as tgau
-import modtorsiflex.tfrw    as rw
-import modtorsiflex.tfhelper     as tfh
-import modtorsiflex.printing   as pp
-from   modtorsiflex.tfvars       import NIBS2, IBS2, EPS_KCALMOL, DIREXCLUD, MINGTXT
+import modtorsiflex.tfgau     as tgau
+import modtorsiflex.tfrw      as rw
+import modtorsiflex.tfhelper  as tfh
+import modtorsiflex.printing  as pp
+from   modtorsiflex.tfvars    import NIBS2, IBS2
+from   modtorsiflex.tfvars    import EPS_KCALMOL, DIREXCLUD
+from   modtorsiflex.tfvars    import MINGTXT, ENERGYSUMLL
 #==================================================#
 
 
@@ -92,11 +94,13 @@ def get_rotcons(lzmat,zmatvals,symbols):
 #--------------------------------------------------#
 def classify_files(inpvars,cmatrix,case,dcorr):
     if case == "LL":
-       folder = inpvars._dirll
-       fscal  = inpvars._freqscalLL
+       folder      = inpvars._dirll
+       fscal       = inpvars._freqscalLL
+       ifreqconstr = inpvars._ifqrangeLL
     if case == "HL":
-       folder = inpvars._dirhl
-       fscal  = inpvars._freqscalHL
+       folder      = inpvars._dirhl
+       fscal       = inpvars._freqscalHL
+       ifreqconstr = inpvars._ifqrangeHL
     # Folder exists?
     if not os.path.exists(folder):
        pp.print_dirnotfound(folder,NIBS2,1)
@@ -104,6 +108,7 @@ def classify_files(inpvars,cmatrix,case,dcorr):
    
     # print status of validation tests
     pp.print_tests(inpvars._tests,1)
+    pp.print_ifreqconstr(ifreqconstr)
 
     # Read logs
     print(IBS2+"Reading log files inside '%s'..."%folder)
@@ -116,8 +121,8 @@ def classify_files(inpvars,cmatrix,case,dcorr):
     dataconfs.sort(key=lambda x:x[1])
     del data
     minG  = min([ctuple[3] for ctuple in dataconfs])
-    if case == "LL":
-       with open(MINGTXT,'w') as asdf: asdf.write("minG %.8f %.2f\n"%(minG,inpvars._temp))
+    if case == "LL": rw.write_llenergies(dataconfs,inpvars._temp)
+       ##with open(MINGTXT,'w') as asdf: asdf.write("minG %.8f %.2f\n"%(minG,inpvars._temp))
 
     if symbols is None: 
        print(IBS2+"ERROR! No data inside %s\n"%folder)
@@ -138,6 +143,10 @@ def classify_files(inpvars,cmatrix,case,dcorr):
     print("")
     print(IBS2+"     frequencies scaled by: %.4f"%fscal)
     print("")
+    if inpvars._ts:
+       print(IBS2+"Transition state imaginary frequency (ifreq) in cm^-1")
+       print("")
+
     # get minimum energies
     minV0 = min([conftuple[1] for conftuple in dataconfs])
     minV1 = min([conftuple[2] for conftuple in dataconfs])
@@ -147,7 +156,8 @@ def classify_files(inpvars,cmatrix,case,dcorr):
     wrongconn   = []
     repeated    = []
     outofdomain = []
-    norestr = []
+    norestr     = []
+    wimag       = []
     iii = len(str(len(dataconfs)))
     jjj = max(len(str(vec0)),len("angles"))
     kkk = max(inpvars._ntorsions*2+2,len("conf"))
@@ -205,14 +215,13 @@ def classify_files(inpvars,cmatrix,case,dcorr):
         datainline += ["%2i"%weight1]
         datainline += ["%7.3f"%relV0,"%7.3f"%relV1,"%7.3f"%relG,"%7.5f"%xj]
         if inpvars._ts:
-            try   : sifreq = "%.1fi cm^-1"%abs(fncs.afreq2cm(ifreq1))
-            except: sifreq = "  -  "
-            datainline += [sifreq]
+           try   : sifreq = "%6.1fi"%abs(fncs.afreq2cm(ifreq1))
+           except: sifreq = "   -   "
+           datainline += [sifreq]
         table_line = " "+" | ".join(fncs.fill_string(col,length) \
                          for col,length in zip(datainline,lengths))
         table2.append( datainline[0:2]+[dipole,rotcons] )
         # Add to QMSHO
-  ###   add_to_qmsho = weight1*Qrv1[str(vec1)]*np.exp(-(V1_1-minV1)/pc.KB/inpvars._temps)
         add_to_qmsho = weight1*Qrv1*np.exp(-(V1_1-minV1)/pc.KB/inpvars._temps)
         QMSHO += add_to_qmsho
         # preconditioned or stochastic?
@@ -226,6 +235,11 @@ def classify_files(inpvars,cmatrix,case,dcorr):
             QMSHO_pre  += add_to_qmsho
             count_pre  += weight1
             sumxj_pre  += xj
+        # check imag freq
+        if ifreqconstr != []:
+           bool_imag  = fncs.float_in_domain(fncs.afreq2cm(abs(ifreq1)),ifreqconstr)
+        else: bool_imag = True
+
         # check geom
         bools = tfh.precheck_geom(lzmat1,zmatvals1,cmatrix,inpvars)
         if   (inpvars._tests[1][0] == 1) and (bools[0] is False):
@@ -240,6 +254,9 @@ def classify_files(inpvars,cmatrix,case,dcorr):
         elif (inpvars._tests[1][3] == 1) and (bools[3] is False):
            table_line += " <-- constraint not fulfilled"
            norestr.append(log1)
+        elif not bool_imag:
+           table_line += " <-- problem with imag. freq."
+           wimag.append(log1)
         else:
            same = False
            enantiomers = False
@@ -277,15 +294,16 @@ def classify_files(inpvars,cmatrix,case,dcorr):
     print("")
     pp.print_torsiangleclass()
 
-    if len(repeated)+len(outofdomain)+len(norestr)+len(wrongconn) > 0:
-       print(IBS2+"Number of wrong-connectivity points: %i"%len(wrongconn))
-       print(IBS2+"Number of repeated           points: %i"%len(repeated))
-       print(IBS2+"Number of out-of-domain      points: %i"%len(outofdomain))
-       print(IBS2+"Number of restr-broken       points: %i"%len(norestr))
+    if len(repeated)+len(outofdomain)+len(norestr)+len(wrongconn)+len(wimag) > 0:
+       print(IBS2+"Number of wrong-connectivity   points: %i"%len(wrongconn))
+       print(IBS2+"Number of repeated             points: %i"%len(repeated))
+       print(IBS2+"Number of out-of-domain        points: %i"%len(outofdomain))
+       print(IBS2+"Number of restr-broken         points: %i"%len(norestr))
+       print(IBS2+"Number of wrong imaginary-freq points: %i"%len(wimag))
        folder2 = folder+DIREXCLUD
        print(IBS2+"  * these points will be moved to: %s"%folder2)
        mkdir_recursive(folder2)
-       for log in repeated+outofdomain+norestr+wrongconn: move(folder+log,folder2+log)
+       for log in repeated+outofdomain+norestr+wrongconn+wimag: move(folder+log,folder2+log)
        print(IBS2+"  * moved!")
        print("")
        # repeat again all

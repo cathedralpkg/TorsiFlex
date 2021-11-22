@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -30,9 +30,9 @@ OTHER DEALINGS IN THE SOFTWARE.
 ---------------------------
 
 *----------------------------------*
-| Module     :  modtorsiflex       |
+| Module     :  common             |
 | Sub-module :  enantor            |
-| Last Update:  2021/02/23 (Y/M/D) |
+| Last Update:  2021/05/20 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -364,6 +364,41 @@ def assign_print(dcorr):
         else:
             print("%2i :"%(node2+1),[node1+1 for node1 in nodes1])
     print()
+#---------------------------------------------------#
+def equivalent_atoms_in_graphs(amatrix1,amatrix2,symbols):
+    # Graphs
+    graph1 = UGRAPH(); graph1.set_from_amatrix(amatrix1)
+    graph2 = UGRAPH(); graph2.set_from_amatrix(amatrix2)
+    
+    # Correlations
+    dcorr,na_0 = assign_initialize(symbols)
+    for ii in range(10): # it should be a while True but... just in case
+        # use symbols of neighbors
+        dcorr,na_1  = assign_neighbors(dcorr,graph1,graph2,symbols)
+        if na_1 == 0: break
+        # use symbols of layers
+        dcorr,na_2  = assign_layers(dcorr,graph1,graph2,symbols)
+        if na_2 == 0: break
+        # update na_0
+        na_0 = na_2
+
+    return dcorr
+#---------------------------------------------------#
+def equivalent_atoms(xcc,symbols,fconnect=1.3):
+    xcc1 = [xi for xi in xcc]
+    xcc2 = [xi for xi in xcc]
+
+    # Adjacency matrices
+    amatrix1 = np.matrix(intl.get_adjmatrix(xcc1,symbols,fconnect,"int")[0])
+    amatrix2 = np.matrix(intl.get_adjmatrix(xcc2,symbols,fconnect,"int")[0])
+
+    # autoconnect!
+    amatrix1 = np.matrix(intl.link_fragments(xcc1,amatrix1.tolist(),1)[0])
+    amatrix2 = np.matrix(intl.link_fragments(xcc2,amatrix2.tolist(),1)[0])
+
+    # Correlate
+    dcorr = equivalent_atoms_in_graphs(amatrix1,amatrix2,symbols)
+    return dcorr
 #===================================================#
 
 
@@ -390,8 +425,8 @@ def correlate_enantio(xcc1,xcc2,symbols,fconnect=1.3,pp=False):
     amatrix2 = np.matrix(intl.link_fragments(xcc2,amatrix2.tolist(),1)[0])
 
     # Graphs
-    graph1 = UGRAPH(); graph1.set_from_amatrix(amatrix1); graph1.gen_laplacian()
-    graph2 = UGRAPH(); graph2.set_from_amatrix(amatrix2); graph2.gen_laplacian()
+    graph1 = UGRAPH(); graph1.set_from_amatrix(amatrix1)
+    graph2 = UGRAPH(); graph2.set_from_amatrix(amatrix2)
 
     
     # Correlations

@@ -3,9 +3,9 @@
 ## About _TorsiFlex_
 
     Name of the Program: TorsiFlex
-    Program Version : 2021.2
-    Program Version Date: May 04, 2021
-    Manual  Version Date: May 04, 2021
+    Program Version : 2021.3
+    Program Version Date: Nov 22, 2021
+    Manual  Version Date: Nov 22, 2021
 
 _TorsiFlex_ is an user-friendly program written in Python 3.
 It was designed to seek the conformers of a given molecule by
@@ -20,7 +20,7 @@ D. Ferro-Costas and A. Fernández-Ramos, Front. Chem., 2020, 8:16.
 
 ## Licensing and Distribution 
 
-_TorsiFlex version 2021.2_
+_TorsiFlex version 2021.3_
 
 MIT LICENSE
 
@@ -133,7 +133,7 @@ or
 
 ## Tests set
 
-Directory __tests/__ contains the z-matrix files associated to the three worked examples (see manual). 
+Directory __tests/__ contains the z-matrix files associated to the four worked examples (see manual). 
 
                                                             
 

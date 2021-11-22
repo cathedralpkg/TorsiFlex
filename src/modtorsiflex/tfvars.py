@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  variables          |
-| Last Update:  2021/02/25 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -43,8 +43,8 @@ values for some variables used in TorsiFlex
 #==========================================#
 PROGNAME      = "torsiflex.py"
 PROGNAMEnopy  = "TorsiFlex"
-VERSION       = "2021.2"
-DATE          = "2021-05-04"
+VERSION       = "2021.3"
+DATE          = "2021-Nov-22"
 PROGVER       = "v%s (%s)"%(VERSION,DATE)
 #------------------------------------------#
 # initial blank spaces to add to all print statements
@@ -58,6 +58,7 @@ DIRMSTOR      = "MsTor/"
 # name of files
 IFILE         = "torsiflex.inp"
 MINGTXT       = "minG.txt"
+ENERGYSUMLL   = "ll_energies.txt"
 LRFILE        = "lastrun"
 DOMAINS       = "conf,enan,repe,fail,excl,wimag".split(",")
 FDOMAINS      = "domains.txt"

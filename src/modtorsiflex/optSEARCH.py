@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  optSEARCH          |
-| Last Update:  2021/02/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -52,6 +52,7 @@ import common.internal          as intl
 import common.fncs              as fncs
 import common.Exceptions        as exc
 from   common.physcons          import ANGSTROM
+from   common.files             import write_zmat
 #----------------------------------------------------------#
 import modtorsiflex.printing    as pp
 import modtorsiflex.tfvars      as tvars
@@ -63,34 +64,25 @@ from   modtorsiflex.tpespoint   import TorPESpoint
 #----------------------------------------------------------#
 
 
-
-
 #==================================================#
-def gen_guess_zmatrix(vec,i_zmatvals,inpvars,closest):
+def gen_guess_zmatrix(vec,i_zmatvals,inpvars,log,distance):
     # read z-matrix from closest domain
     use_default = True
-    if closest is not None:
-       logfileS = inpvars._dirll+"prec.%s.log"%str(closest) # preconditioned
-       logfileR = inpvars._dirll+"stoc.%s.log"%str(closest) # random
-       if   os.path.exists(logfileS): logfile = logfileS
-       elif os.path.exists(logfileR): logfile = logfileR
-       else                         : logfile = None
-       if logfile is None: use_default = True
-       else:
-          try:
-             logdata   = gau.read_gaussian_log(logfile)
-             zmatlines = logdata[10]
-             zmat, zmatvals, symbols = rw.data_from_zmat_lines(zmatlines)
-             sprint("using z-matrix from stored file (%s)"%logfile,tvars.NIBS2+4)
-             use_default = False
-          except: use_default = True
+    try:
+       logdata   = gau.read_gaussian_log(inpvars._dirll+log)
+       zmatlines = logdata[10]
+       (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmatlines)
+       sprint("using Z-matrix from stored file (%s)"%log,tvars.NIBS2+4)
+       sprint("distance to stored Z-matrix: %.0f degrees"%distance,tvars.NIBS2+4)
+       use_default = False
+    except: use_default = True
     # get closest z-matrix
     if use_default:
-       sprint("using default z-matrix (%s)"%inpvars._zmatfile,tvars.NIBS2+4)
+       sprint("using default Z-matrix (%s)"%inpvars._zmatfile,tvars.NIBS2+4)
        zmatvals = {k:v for (k,v) in i_zmatvals.items()}
     # Apply vector to current z-matrix
-    for angle,ic in zip(vec._fvec,inpvars._tic):
-        zmatvals[ic] = angle
+    for angle,ic in zip(vec._fvec,inpvars._tic): zmatvals[ic] = angle
+    # return zmatvals
     return zmatvals
 #--------------------------------------------------#
 def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
@@ -125,6 +117,8 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
     if end_program: return
 
     pp.print_tests(inpvars._tests)
+    pp.print_ifreqconstr(inpvars._ifqrangeLL)
+
     #=======================#
     # Deal with domain file #
     #=======================#
@@ -156,7 +150,9 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
     nopt  = 0
     nfrq  = 0
     nsp   = 0
+    svec2log = tfh.get_logs_vecs(inpvars,dcorr,svec2log={})
     for vecA in tfh.yield_angles(inpvars):
+
         count += 1
         # read domains
         ddomains = rw.read_domains()
@@ -167,8 +163,9 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         #------------------#
         # analyze geometry #
         #------------------#
-        sprint("preparing z-matrix...",tvars.NIBS2+4)
-        bool_guess, closest = tfh.test_similarity_redundancy(vecA,inpvars,ddomains)
+        sprint("preparing Z-matrix...",tvars.NIBS2+4)
+        args = (vecA,inpvars,ddomains,svec2log,dcorr)
+        bool_guess, closest, svec2log, distance = tfh.test_similarity_redundancy(*args)
         if bool_guess == -1:
            sprint("already listed in %s"%tvars.FDOMAINS,tvars.NIBS2+4)
            sprint()
@@ -177,7 +174,8 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
            sprint("similarity test is negative: in the domain of %s"%str(closest),tvars.NIBS2+4)
            sprint()
            continue
-        args = (vecA,i_zmatvals,inpvars,closest)
+        closest_log = svec2log.get(str(closest),None)
+        args = (vecA,i_zmatvals,inpvars,closest_log,distance)
         zmatvals = gen_guess_zmatrix(*args)
         if inpvars._enantio:
            vecA_enantio = tfh.enantiovec(lzmat,zmatvals,dcorr,inpvars)
@@ -206,47 +204,8 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         #------------------#
         sprint("optimization...",tvars.NIBS2+4)
         data = (loptLL,prefix1+str(vecA),inpvars,lzmat,zmatvals,"LL")
-        ofileOPT,statusOPT,dummy,vecB,zmatvals = itf.execute(*data)
+        ofileOPT,statusOPT,dummy,vecB,zmatvals,zmatatoms = itf.execute(*data)
         nopt += 1
-
-        #===========================#
-        # if NH2, check inversion!! #
-        #===========================#
-        if len(lNH2) != 0:
-           xcc0 = intl.zmat2xcc(lzmat,zmatvals)
-           inversion = False
-           for HNRH_atoms,HNRH_value,HNRH_bool in lNH2:
-               # check inversion
-               cvalue,cbool = tfh.deal_with_HNRH(HNRH_atoms,xcc0)
-               if HNRH_bool == cbool: continue
-               # EXCHANGE HIDROGEN ATOMS!!
-               inversion = True
-               idxH1     = HNRH_atoms[0]
-               idxH2     = HNRH_atoms[3]
-               x1        = xcc0[3*idxH1:3*idxH1+3]
-               x2        = xcc0[3*idxH2:3*idxH2+3]
-               xcc0[3*idxH1:3*idxH1+3] = x2
-               xcc0[3*idxH2:3*idxH2+3] = x1
-               # recalculate zmatrix values (only those involving H1 or H2)
-               for ic,atoms in zmatatoms.items():
-                   if not (idxH1 in atoms or idxH2 in atoms): continue
-                   xs = (xcc0[3*at:3*at+3] for at in atoms)
-                   if len(atoms) == 2: zmatvals[ic] = ANGSTROM * fncs.distance(*xs)
-                   if len(atoms) == 3: zmatvals[ic] = np.rad2deg(fncs.angle(*xs)   )
-                   if len(atoms) == 4: zmatvals[ic] = np.rad2deg(fncs.dihedral(*xs))
-           # recalculate vector
-           if inversion:
-              svecB1 = str(vecB)
-              vecB   = TorPESpoint(tfh.zmat2vec(zmatvals,inpvars._tic),inpvars._tlimit)
-              svecB2 = str(vecB)
-              if svecB1 != svecB2:
-                 sprint("NH2 inversion detected! Exchanging H atoms...",tvars.NIBS2+4)
-                 sprint("final vector: %s"%svecB2,tvars.NIBS2+4)
-        #===========================#
-
-        if inpvars._enantio:
-           vecB_enantio = tfh.enantiovec(lzmat,zmatvals,dcorr,inpvars)
-           sprint("enantiomer  : %s"%str(vecB_enantio),tvars.NIBS2+4)
 
         # optimization was carried out --> save guess
         if statusOPT != 0:
@@ -254,6 +213,25 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
           #if inpvars._enantio: rw.add_domain("fail",vecA_enantio,None,-1)
            sprint()
            continue
+
+        #===========================#
+        #    check NH2 inversion    #
+        #===========================#
+        zmatvals,inversion = tfh.correct_NH2_inversion(lzmat,zmatvals,zmatatoms,lNH2)
+        if inversion:
+           # recalculate vector
+           svecB1 = str(vecB)
+           vecB   = TorPESpoint(tfh.zmat2vec(zmatvals,inpvars._tic),inpvars._tlimit)
+           svecB2 = str(vecB)
+           if svecB1 != svecB2:
+              sprint("NH2 inversion detected! Exchanging H atoms...",tvars.NIBS2+4)
+              sprint("final vector: %s"%svecB2,tvars.NIBS2+4)
+        #===========================#
+
+        if inpvars._enantio:
+           vecB_enantio = tfh.enantiovec(lzmat,zmatvals,dcorr,inpvars)
+           sprint("enantiomer  : %s"%str(vecB_enantio),tvars.NIBS2+4)
+
         change = int(round(vecA.distance(vecB)))
         sprint("distance from guess point: %i degrees"%change,tvars.NIBS2+4)
         sprint()
@@ -305,7 +283,7 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         #------------------#
         sprint("frequency calculation...",tvars.NIBS2+4)
         data = (lfrqLL,prefix2+str(vecA),inpvars,lzmat,zmatvals,"LL")
-        ofileFRQ,dummy,statusFRQ,vecB_frq,dummy = itf.execute(*data)
+        ofileFRQ,dummy,statusFRQ,vecB_frq,dummy,dummy = itf.execute(*data)
         nfrq += 1
 
         #------------------------------#
@@ -317,6 +295,16 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         # Save optimized point
         if bool_conf: seldomain = "conf"
         else        : seldomain = "wimag"
+
+        # check imag freq
+        if seldomain == "conf" and inpvars._ifqrangeLL != []:
+           ifreq = abs( fncs.afreq2cm(itf.get_imag_freq(ofileFRQ,inpvars._freqscalLL)) )
+           isok  = fncs.float_in_domain(ifreq,inpvars._ifqrangeLL)
+           if not isok:
+              seldomain,bool_conf = "wimag", False
+              pp.print_excluded_ifreq(ifreq)
+           else: pp.print_accepted_ifreq(ifreq)
+
         rw.add_domain(seldomain,vecA,vecB,statusFRQ)
         if   inpvars._enantio and seldomain == "conf":
            rw.add_domain("enan",vecA_enantio,vecB_enantio,statusFRQ)
@@ -326,6 +314,9 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         # Save files #
         #============#
         if bool_conf:
+           # create z-matrix file
+           dst = inpvars._dirll+prefix3+"%s.zmat"%str(vecB)
+           write_zmat(dst,lzmat, zmatvals)
            # copy frq file
            src = ofileFRQ
            dst = inpvars._dirll+prefix3+"%s.log"%str(vecB)

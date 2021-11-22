@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  printing           |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -83,15 +83,15 @@ Main authors:
 
 Execution:
 
-  %s [--help /-h]  [--version/-v]  [--inp   ]
-  %s [--prec    ]  [--stoc      ]  [--hlopt ]
-  %s [--msho    ]  [--mstor     ]  [--regen ]
+  %s [--help /-h]  [--version/-v]  [--inp/--input]
+  %s [--prec    ]  [--stoc      ]  [--hlopt      ]
+  %s [--msho    ]  [--mstor     ]  [--regen      ]
 
 -------------------
   Program options  
 -------------------
 
-   --inp
+   --inp / --input
 
      Generates the input file and the templates for Gaussian.
 
@@ -183,7 +183,7 @@ Execution:
     taking into account that:
 
     * [nproc], [mem], [level], [optmode], [charge],
-      [multipl], [zmat], [modred], and [ffccards]
+      [multipl], [zmat], [modred], and [fccards]
       are %s indications.
       They should not be removed.
 
@@ -191,9 +191,9 @@ Execution:
 
     * The command line includes 'iop(99/9=1,99/14=3)'.
       This is mandatory and should not be deleted:
-         99/9=1  --> rotates to z-matrix orientation first
+         99/9=1  --> rotates to Z-matrix orientation first
          99/14=3 --> expresses final optimized structure
-                     in terms of the input z-matrix
+                     in terms of the input Z-matrix
 
     * 'scf=(incore)' is recommended with Hartree-Fock
       calculations. With it, Gaussian stores the full
@@ -316,8 +316,22 @@ def print_tests(tests,which=0):
     sprint("  - H-Constraint test on Opt structure  : %s"%(tests[1][2] == 1),NIBS2)
     sprint("  - S-Constraint test on Opt structure  : %s"%(tests[1][3] == 1),NIBS2)
 
-    sprint()
-
+    sprint("")
+#--------------------------------------------------#
+def print_ifreqconstr(interval):
+    if len(interval) == 0: return
+    sprint("  - Imaginary frequency restriction DEFINED!",NIBS2)
+    for if1,if2 in interval:
+        sprint("    * From %7.2fi to %7.2fi"%(if1,if2),NIBS2)
+    sprint("")
+#--------------------------------------------------#
+def print_excluded_ifreq(ifreq):
+    TEXT_EXCL = "[excluded!] imaginary freq., %.2fi cm^-1, outside defined interval"
+    sprint(TEXT_EXCL%ifreq,NIBS2+4)
+#--------------------------------------------------#
+def print_accepted_ifreq(ifreq):
+    TEXT_ACCE = "[accepted!] imaginary freq., %.2fi cm^-1, inside defined interval"
+    sprint(TEXT_ACCE%ifreq,NIBS2+4)
 #--------------------------------------------------#
 def print_numcalcs(count,nopt,nfrq,nsp):
     sprint("About number of calculations:",NIBS2)

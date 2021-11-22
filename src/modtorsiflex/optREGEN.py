@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  optREGEN           |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -78,7 +78,7 @@ def dirll_conformers(dirll,ts):
 #==================================================#
 # Regenerate domains from dirll and tmpll          #
 #==================================================#
-def regen_from_tmp(inpvars,cmatrix):
+def regen_from_tmp(inpvars):
     # assert file does not exist
     if os.path.exists(FDOMAINS):
        sprint("File '%s' already exists!"%FDOMAINS,NIBS2)
@@ -113,7 +113,7 @@ def regen_from_tmp(inpvars,cmatrix):
            log_opt  = inpvars._tmpll+log
            log_frq  = inpvars._tmpll+log_frq
            # Read log file and get status
-           statusOPT,statusFRQ,vec2 = tgau.status_from_log(log_opt,cmatrix,inpvars)
+           statusOPT,statusFRQ,vec2 = tgau.status_from_log(log_opt,inpvars)
 
            # 1. Log file without Normal termination
            if statusOPT == -1:
@@ -121,7 +121,7 @@ def regen_from_tmp(inpvars,cmatrix):
 
            # 2. Log file with Normal termination & frq file exists
            elif os.path.exists(log_frq):
-              statusFRQ = tgau.status_from_log(log_frq,cmatrix,inpvars)[1]
+              statusFRQ = tgau.status_from_log(log_frq,inpvars)[1]
               bool_min = (statusFRQ == 0) and (not inpvars._ts)
               bool_ts  = (statusFRQ == 1) and (    inpvars._ts)
               # 2.1. correct number of ifreqs

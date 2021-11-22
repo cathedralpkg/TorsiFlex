@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  inpvars            |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -49,6 +49,7 @@ from  common.fncs       import float_in_domain
 from  common.Exceptions import ErrorTorsion1
 from  common.Exceptions import ErrorTorsionN
 from  common.Exceptions import ErrorTorsionRepe
+from  common.Exceptions import UnknownKey
 #--------------------------------------------------#
 import modtorsiflex.tfhelper  as tfh
 import modtorsiflex.tfrw as rw
@@ -76,9 +77,11 @@ class InpVars():
           self._pcfile       = None
           self._lowlevel     = "pm6"
           self._highlevel    = "hf 3-21g"
-          self._mem          = "1GB"
+          self._memll        = "1GB"
+          self._memhl        = "1GB"
           # int/floats #
-          self._nproc        = 1
+          self._nprocll      = 1
+          self._nprochl      = 1
           self._ncycles      = 200
           self._optmode      = 0
           self._dist1d       = 15.0
@@ -94,7 +97,10 @@ class InpVars():
           # lists
           self._hconstr      = []
           self._sconstr      = []
+          self._ifqrangeLL   = []
+          self._ifqrangeHL   = []
           self._temps        = []
+          self._skipconn     = []
           # dictionaries
           self._tic          = {} # now dict, later list
           self._tsigma       = {} # now dict, later list
@@ -160,6 +166,7 @@ class InpVars():
           string += "enantio     no          # yes if torsional enantioners, no otherwise\n"
           string += "ts          no          # yes if transition state, no otherwise\n"
           string += "cfactor     1.3         # controls the connectivity criterium\n"
+          string += "#skipcon    (1,2)       # skips connectivity between pairs of atoms\n"
           string += "\n"
           string += "\n"
           string += "#-----------------------#\n"
@@ -194,6 +201,8 @@ class InpVars():
           string += "epsdeg      2           # max diff between two identical angles (degrees)\n"
           string += "#hconstr    ic domain   # hard constraint (see manual)\n"
           string += "#sconstr    ic domain   # soft constraint (see manual)\n"
+          string += "#ifqrangeLL domain      # restricts LL imaginary-frequency interval\n"
+          string += "#ifqrangeHL domain      # restricts HL imaginary-frequency interval\n"
           string += "\n"
           string += "\n"
           string += "#-----------------------#\n"
@@ -205,8 +214,10 @@ class InpVars():
           string += "multipl     1           # multiplicity of the system\n"
           string += "lowlevel    hf    3-21g # low-level of calculation\n"
           string += "highlevel   b3lyp 6-31G # high-level of calculation\n"
-          string += "nproc       1           # Number of threads\n"
-          string += "mem         1GB         # dynamic memory\n"
+          string += "nprocll     1           # Number of threads (low-level)\n"
+          string += "memll       1GB         # dynamic memory (low-level)\n"
+          string += "nprochl     1           # Number of threads (high-level)\n"
+          string += "memhl       1GB         # dynamic memory (high-level)\n"
       #   string += "# Energy keyword for Gaussian ouput files\n"
       #   string += "#keyll      hf\n"
       #   string += "#keyhl      hf\n"
@@ -252,6 +263,7 @@ class InpVars():
                 value    = " ".join(line.split()[1:]).strip()
                 self.setvar(variable,value)
               except ErrorTorsionRepe as error: raise error
+              except UnknownKey       as error: raise error
               except: continue
           # check torsions
           Xs = [int(X) for X in self._tic.keys()]
@@ -276,6 +288,11 @@ class InpVars():
              if value.lower() == "yes": self._ts = True
           elif variable == "cfactor":
              self._cfactor   = float(value)
+          elif variable == "skipcon":
+              pairs = [pair.replace("(","").strip() for pair in value.split(")")]
+              pairs = [pair for pair in pairs if "," in pair]
+              pairs = [tuple(int(atom)-1 for atom in pair.split(",")) for pair in pairs]
+              self._skipconn += pairs
 
           #-----------------#
           # Target torsions #
@@ -335,6 +352,10 @@ class InpVars():
           elif variable == "sconstr":
              ic,icdomain = value.split()
              self._sconstr.append( (ic,icdomain) )
+          elif variable == "ifqrangell":
+             self._ifqrangeLL = tfh.str2ifreqinterval(value.strip())
+          elif variable == "ifqrangehl":
+             self._ifqrangeHL = tfh.str2ifreqinterval(value.strip())
 
           #----------------#
           # Gaussian calcs #
@@ -352,9 +373,19 @@ class InpVars():
           elif variable == "highlevel":
              self._highlevel = value.strip()
           elif variable == "nproc":
-             self._nproc   = int(value)
+             self._nprocll = int(value)
+             self._nprochl = int(value)
+          elif variable == "nprocll":
+             self._nprocll = int(value)
+          elif variable == "nprochl":
+             self._nprochl = int(value)
           elif variable == "mem":
-             self._mem     = value.strip()
+             self._memll   = value.strip()
+             self._memhl   = value.strip()
+          elif variable == "memll":
+             self._memll   = value.strip()
+          elif variable == "memhl":
+             self._memhl   = value.strip()
         # elif variable == "keyll":
         #    self._keyll = value.strip()
         # elif variable == "keyhl":
@@ -387,6 +418,11 @@ class InpVars():
           elif variable == "dirhl":
              self._dirhl = value.strip()
              if not self._dirhl.endswith("/"): self._dirhl += "/"
+
+          else:
+              print("    UNKNOWN KEYWORD: %s"%variable)
+              print("")
+              raise UnknownKey
 
       def prepare_variables(self):
           self._ttorsions = list(self._tic.keys())

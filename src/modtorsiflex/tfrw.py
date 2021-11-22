@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  tfrw               |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -52,7 +52,6 @@ from   common.Molecule   import Molecule
 from   common.pgs        import get_pgs
 from   common.Exceptions import WrongDimension
 #--------------------------------------------------#
-import modtorsiflex.tfhelper  as tfh
 import modtorsiflex.tfvars    as tvars
 #--------------------------------------------------#
 from   modtorsiflex.tpespoint import TorPESpoint
@@ -90,7 +89,7 @@ def readfile_xyz(fname):
         datainline = (sidx%(at+1),symbol,xi,yi,zi,mass)
         if symbol != "XX": at_wo += 1; dwithout[at] = at_wo
         else: dwithout[at] = None
-        string += "[%s]  %-2s  %+10.5f  %+10.5f  %+10.5f  (%7.3f amu)\n"%datainline
+        string += "[%s]  %-2s  %+12.7f  %+12.7f  %+12.7f  (%7.3f amu)\n"%datainline
     string += "\n"
     return xcc,zmat,symbols,masses,(dwithout,molecule,natoms,ndummy),string
 #==================================================#
@@ -99,42 +98,6 @@ def readfile_xyz(fname):
 #==================================================#
 # Functions for reading/writing torsiflex files    #
 #==================================================#
-def data_from_zmat_lines(zmatlines,torsions={}):
-    # Strip lines and remove commas and equal signs: "," --> " "; "=" --> " "
-    zmatlines = [line.strip().replace(","," ").replace("="," ") for line in zmatlines]
-    # Store correct lines
-    zmatlines = [line for line in zmatlines if line != ""]
-    # Convert selected torsions to dtorX
-    for idx,line in enumerate(zmatlines):
-        words = line.split()
-        for X,ic in torsions.items():
-            dtorX = tfh.X2tname(X)
-            if ic in words:
-                words[words.index(ic)] = dtorX
-                zmatlines[idx] = " ".join(words)
-    # Get symbols from lines
-    allsymbols = [line.split()[0] for line in zmatlines if len(line.split()) != 2]
-    # Put symbols in correct format
-    allsymbols = fncs.correct_symbols(allsymbols)
-    # Get zmat list and values of each coordinate
-    zmat     = [line for line in zmatlines if len(line.split()) != 2]
-    zmatvals = {line.split()[0]:float(line.split()[1]) for line in zmatlines if len(line.split()) == 2}
-#   # Just in case, check dtorX
-#   for line in zmat:
-#       if "dtor" in line:
-#           idx = line.find("dtor")
-#           ttorsion = line[idx:].split()[0]
-#           if ttorsion not in zmatvals.keys(): zmatvals[ttorsion] = 180.0
-    # Return data
-    return zmat, zmatvals, allsymbols
-#--------------------------------------------------#
-def read_zmat(filename,torsions={}):
-    with open(filename,'r') as asdf: lines = asdf.readlines()
-    # Read data
-    zmat, zmatvals, symbols = data_from_zmat_lines(lines,torsions)
-    # Return data
-    return zmat, zmatvals, symbols
-#--------------------------------------------------#
 def read_pcfile(pcfile):
     # read file
     with open(pcfile,'r') as asdf: lines = asdf.readlines()
@@ -217,7 +180,47 @@ def write_domains(ntorsions,ddomains):
         for ipoint,fpoint,statusFRQ in ddomains[domain]:
             add_domain(domain,ipoint,fpoint,statusFRQ)
 #--------------------------------------------------#
-def read_llhlcorr(dirll,dirhl):
+def read_llenergies():
+    with open(tvars.ENERGYSUMLL,'r') as asdf: lines = asdf.readlines()
+    data = []
+    for line in lines:
+        line = line.split("#")[0].strip()
+        if line == "": continue
+        # temperature
+        if "tempGibbs" in line:
+           T = float(line.split()[1])
+           continue
+        #data
+        line = line.replace("|"," ")
+        idx, V0, G,svec = line.split()
+        idx = int(idx)
+        V0  = float(V0)
+        G   = float(G)
+        data.append( (idx,V0,G,svec) )
+    data.sort()
+    return data,T
+#--------------------------------------------------#
+def write_llenergies(dataconfs,temp):
+    ni = max(len(str(dataconfs[0][0])),len("point"))
+    string  = "# Gibbs free energy temperature\n"
+    string += "tempGibbs %9.3f K\n"%temp
+    string += "\n"
+    string += "              #--------------------------#\n"
+    string += "              #        kcal/mol          #\n"
+    string += "#----------------------------------------#\n"
+    string += "#  conformer  |     V0     |    Gibbs    #\n"
+    string += "#----------------------------------------#\n"
+    minV0 = min([conftuple_i[1] for conftuple_i in dataconfs])
+    minG  = min([conftuple_i[3]  for conftuple_i in dataconfs])
+    for idx_i,conftuple_i in enumerate(dataconfs):
+        vec_i,V0_i,V1_i,G_i = conftuple_i[0:4]
+        relV0_i = (V0_i-minV0)*pc.KCALMOL
+        relG_i  = (G_i -minG )*pc.KCALMOL
+        string += "   %-9i  |  %8.3f  |  %9.3f  | %s \n"%(idx_i+1,relV0_i,relG_i,vec_i)
+    string += "#----------------------------------------#\n"
+    with open(tvars.ENERGYSUMLL,'w') as asdf: asdf.write(string)
+#--------------------------------------------------#
+def read_llhlcorr():
     correlations = {}
     if not os.path.exists(tvars.LLHLCORRFILE): return correlations
     with open(tvars.LLHLCORRFILE,'r') as asdf: lines = asdf.readlines()
@@ -232,6 +235,10 @@ def read_llhlcorr(dirll,dirhl):
         correlations[vecLL] = vecHL
     return correlations
 #--------------------------------------------------#
+def add_llhlcorr(vecLL,vecHL):
+    line = "%s  -->  %s\n"%(vecLL,vecHL)
+    with open(tvars.LLHLCORRFILE,'a') as asdf: asdf.write(line)
+#--------------------------------------------------#
 def write_llhlcorr(correlations):
     string = "".join("%s  -->  %s\n"%(vecLL,vecHL) for (vecLL,vecHL) in correlations.items())
     with open(tvars.LLHLCORRFILE,'w') as asdf: asdf.write(string)
@@ -245,7 +252,7 @@ def string4xyzfile(xcc,symbols,info=""):
         x *= pc.ANGSTROM
         y *= pc.ANGSTROM
         z *= pc.ANGSTROM
-        string += "%2s  %+9.5f  %+9.5f  %+9.5f\n"%(symbol,x,y,z)
+        string += "%2s  %+12.8f  %+12.8f  %+12.8f\n"%(symbol,x,y,z)
     return string
 #--------------------------------------------------#
 def create_xyz(xcc,symbols,inpvars):
@@ -258,7 +265,7 @@ def create_xyz(xcc,symbols,inpvars):
            x *= pc.ANGSTROM
            y *= pc.ANGSTROM
            z *= pc.ANGSTROM
-           string += "%2s  %+9.5f  %+9.5f  %+9.5f\n"%(symbol,x,y,z)
+           string += "%2s  %+12.8f  %+12.8f  %+12.8f\n"%(symbol,x,y,z)
        with open(xyzfile,'w') as asdf: asdf.write(string)
 #--------------------------------------------------#
 def write_molden_allconfs(dataconfs,Eref,allsymbols,folder):

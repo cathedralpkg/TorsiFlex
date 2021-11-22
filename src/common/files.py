@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  common             |
 | Sub-module :  files              |
-| Last Update:  2020/02/03 (Y/M/D) |
+| Last Update:  2021/06/07 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -230,6 +230,17 @@ def read_xyz_zmat(xyzfile):
     # Return data
     return (lzmat,zmatvals,zmatatoms), symbols, masses
 #-----------------------------------------------#
+def string_xyz(xcc,symbs):
+    nat = len(symbs)
+    string = ""
+    for idx in range(nat):
+        symbol = symbs[idx]
+        xx = fncs.x(xcc,idx)*ANGSTROM
+        yy = fncs.y(xcc,idx)*ANGSTROM
+        zz = fncs.z(xcc,idx)*ANGSTROM
+        string += " %2s   %+13.8f   %+13.8f   %+13.8f\n"%(symbol,xx,yy,zz)
+    return string
+#-----------------------------------------------#
 def write_xyz(filename,xcc,symbs,comment="info line",mode="w",ext=".xyz"):
     '''
     Write standard .xyz file
@@ -246,16 +257,17 @@ def write_xyz(filename,xcc,symbs,comment="info line",mode="w",ext=".xyz"):
     string  = ""
     string += "%i\n"%nat
     string += "%s\n"%comment
-    for idx in range(nat):
-        symbol = symbs[idx]
-        xx = fncs.x(xcc,idx)*ANGSTROM
-        yy = fncs.y(xcc,idx)*ANGSTROM
-        zz = fncs.z(xcc,idx)*ANGSTROM
-        string += " %2s   %+10.5f   %+10.5f   %+10.5f\n"%(symbol,xx,yy,zz)
+    string += string_xyz(xcc,symbs)
+#   for idx in range(nat):
+#       symbol = symbs[idx]
+#       xx = fncs.x(xcc,idx)*ANGSTROM
+#       yy = fncs.y(xcc,idx)*ANGSTROM
+#       zz = fncs.z(xcc,idx)*ANGSTROM
+#       string += " %2s   %+13.8f   %+13.8f   %+13.8f\n"%(symbol,xx,yy,zz)
     # Write file
     with open(filename,mode) as asdf: asdf.write(string)
 #-----------------------------------------------#
-def write_zmat(fname, lzmat, zmatvals, zmatatoms):
+def string_zmat(lzmat, zmatvals):
     string = ""
     sorted_keys = [key for (symbol,conns,keys) in lzmat for key in keys]
     for symbol, connections, keys in lzmat: 
@@ -264,8 +276,11 @@ def write_zmat(fname, lzmat, zmatvals, zmatatoms):
     string += "\n"
     for key in sorted_keys:
         if key not in zmatvals: continue # for dummy, where the key is the float number
-        string += "%-6s   %9.4f\n"%(key,zmatvals[key])
-    string += "\n"
+        string += "%-6s   %13.8f\n"%(key,zmatvals[key])
+    return string
+#-----------------------------------------------#
+def write_zmat(fname, lzmat, zmatvals):
+    string = string_zmat(lzmat, zmatvals)+"\n"
     with open(fname,'w') as asdf: asdf.write(string)
 #===============================================#
 
@@ -343,6 +358,20 @@ def write_molden(filename,xcc,symbs,freqs,evecs):
 #===============================================#
 # Function(s) to deal with: GTS file(s)         #
 #===============================================#
+def findingts_energy_pg(gtsfile):
+    V0 = None
+    nn = 0
+    with open(gtsfile, "r") as asdf:
+      for line in asdf:
+          if '   energy   ' in line:
+              V0 = float(line.split("#")[0].split()[1])
+              nn += 1
+          if ' pointgroup ' in line:
+              pg =       line.split("#")[0].split()[1]
+              nn += 2
+          if nn == 2: break
+    return V0, pg
+#-----------------------------------------------#
 def read_gtsfile(gtsfile):
     lines = read_file(gtsfile)
     # check extension
@@ -400,15 +429,8 @@ def write_gtsfile(xcc,atonums,ch,mtp,E,pgroup,rotsigma,gcc,Fcc,gtsfile,freqs=Non
     if freqs is None: freqs = []
     nat      = len(atonums)
     str_gts  = ""
-    # Write atomic numbers and cartesian coordinates
+    # write level of calculation
     if level != "": str_gts += "# level: %s\n"%level
-    str_gts += "# Atomic number and non-scaled cartesian coordinates [bohr]\n"
-    str_gts += "start_cc\n"
-    for at in range(nat):
-        atonum = atonums[at]
-        xx,yy,zz = fncs.xyz(xcc,at)
-        str_gts += "   %03i   %+15.8E  %+15.8E  %+15.8E\n"%(atonum,xx,yy,zz)
-    str_gts += "end_cc\n\n"
     # Write basic data
     str_gts += "# Charge, multiplicity, energy [hartree],\n"
     str_gts += "# point group and rotational symmetry number\n"
@@ -419,6 +441,14 @@ def write_gtsfile(xcc,atonums,ch,mtp,E,pgroup,rotsigma,gcc,Fcc,gtsfile,freqs=Non
     str_gts += "   pointgroup    %-5s           # Point group\n"%pgroup
     str_gts += "   rotsigma      %-5i           # Rotational sigma\n"%rotsigma
     str_gts += "end_basic\n\n"
+    # Write atomic numbers and cartesian coordinates
+    str_gts += "# Atomic number and non-scaled cartesian coordinates [bohr]\n"
+    str_gts += "start_cc\n"
+    for at in range(nat):
+        atonum = atonums[at]
+        xx,yy,zz = fncs.xyz(xcc,at)
+        str_gts += "   %03i   %+15.8E  %+15.8E  %+15.8E\n"%(atonum,xx,yy,zz)
+    str_gts += "end_cc\n\n"
     # Write cartesian gradiend
     if len(gcc) != 0:
        str_gts += "# Non-scaled cartesian gradient [hartree/bohr]\n"
@@ -698,7 +728,7 @@ def rst2xyz(rst,xyz,onlyhess=True,Eref=None):
             x *= ANGSTROM
             y *= ANGSTROM
             z *= ANGSTROM
-            string += " %2s   %+10.6f  %+10.6f  %+10.6f\n"%(symbol,x,y,z)
+            string += " %2s   %+12.8f  %+12.8f  %+12.8f\n"%(symbol,x,y,z)
     with open(xyz,'w') as asdf: asdf.write(string)
 #===============================================#
 

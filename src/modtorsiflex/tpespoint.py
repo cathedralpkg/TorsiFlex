@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  tpespoint          |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -128,7 +128,7 @@ class TorPESpoint():
               if not fncs.float_in_domain(angle,domain): return False
           return True
 
-      def closest(self,points):
+      def closest(self,points,mode=1):
           if len(points) == 0: return None
           # initialize
           mindist = float("inf")
@@ -137,6 +137,7 @@ class TorPESpoint():
           for point in points:
               dist = self.distance_if_smaller(point,mindist)
               if dist < mindist: mindist,closest = dist,point
+          if mode == 2: return closest,mindist
           return closest
 
       def nomenclature(self):

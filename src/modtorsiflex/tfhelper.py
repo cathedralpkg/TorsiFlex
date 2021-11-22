@@ -4,7 +4,7 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.2
+Version     : 2021.3
 License     : MIT/x11
 
 Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  tfhelper           |
-| Last Update:  2020/12/21 (Y/M/D) |
+| Last Update:  2021/11/22 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -48,12 +48,14 @@ import random
 import common.fncs       as fncs
 import common.internal   as intl
 import common.Exceptions as exc
+import common.gaussian   as gau
+import common.enantor    as enan
 from   common.physcons   import ANGSTROM
 from   common.files      import mkdir_recursive
 #------------------------------------------#
 import modtorsiflex.printing    as pp
 from   modtorsiflex.tpespoint   import TorPESpoint
-import modtorsiflex.enantor     as enan
+import modtorsiflex.tfrw        as rw
 #==========================================#
 
 
@@ -142,6 +144,14 @@ def bool2yesno(logical_variable):
     if logical_variable: return "yes"
     else               : return "no"
 #--------------------------------------------------#
+def str2ifreqinterval(string):
+    intervals = [interval.replace("(","").replace(")","").split(",") \
+                 for interval in string.split("U")]
+    intervals = [(abs(float(ifreq1)),abs(float(ifreq2))) for (ifreq1,ifreq2) in intervals]
+    # exclude intervals where phi1>phi2
+    intervals = [(phi1,phi2) if phi1<=phi2 else (phi2,phi1) for (phi1,phi2) in intervals]
+    return intervals
+#--------------------------------------------------#
 def str2interval(string,bint=False):
     intervals = [interval.replace("(","").replace(")","").split(",") \
                  for interval in string.split("U")]
@@ -193,6 +203,13 @@ def xcc2vec(xcc,inpvars):
         phis.append( np.rad2deg(fncs.dihedral(*xs)) )
     return TorPESpoint(phis)
 #--------------------------------------------------#
+def folder_logs(folder):
+    if not os.path.exists(folder): return []
+    # only those log files with freq calculations
+    logs = [log for log in os.listdir(folder) if log.endswith(".log")]
+    # The vectors
+    return logs
+#--------------------------------------------------#
 def folder_points(folder):
     if not os.path.exists(folder): return []
     # only those log files with freq calculations
@@ -226,6 +243,35 @@ def enantiovec(lzmat,zmatvals,dcorr,inpvars):
     return vec_enantio
 #==================================================#
 
+#==================================================#
+def correct_NH2_inversion(lzmat,zmatvals,zmatatoms,lNH2):
+    inversion = False
+    if len(lNH2) != 0:
+       # Create Cartesian coords
+       xcc0 = intl.zmat2xcc(lzmat,zmatvals)
+       # Check every NH2 group
+       for HNRH_atoms,HNRH_value,HNRH_bool in lNH2:
+           # check inversion
+           cvalue,cbool = deal_with_HNRH(HNRH_atoms,xcc0)
+           if HNRH_bool == cbool: continue
+           # EXCHANGE HIDROGEN ATOMS!!
+           inversion = True
+           idxH1     = HNRH_atoms[0]
+           idxH2     = HNRH_atoms[3]
+           x1        = xcc0[3*idxH1:3*idxH1+3]
+           x2        = xcc0[3*idxH2:3*idxH2+3]
+           xcc0[3*idxH1:3*idxH1+3] = x2
+           xcc0[3*idxH2:3*idxH2+3] = x1
+           # recalculate zmatrix values (only those involving H1 or H2)
+           for ic,atoms in zmatatoms.items():
+               if not (idxH1 in atoms or idxH2 in atoms): continue
+               xs = (xcc0[3*at:3*at+3] for at in atoms)
+               if len(atoms) == 2: zmatvals[ic] = ANGSTROM * fncs.distance(*xs)
+               if len(atoms) == 3: zmatvals[ic] = np.rad2deg(fncs.angle(*xs)   )
+               if len(atoms) == 4: zmatvals[ic] = np.rad2deg(fncs.dihedral(*xs))
+    return zmatvals,inversion
+#==================================================#
+
 
 #==================================================#
 def in_explored_domain(vec,ddomains,inpvars):
@@ -246,7 +292,7 @@ def in_explored_domain(vec,ddomains,inpvars):
     if inside: return True , closest
     return False, closest
 #--------------------------------------------------#
-def test_similarity_redundancy(point,inpvars,ddomains):
+def test_similarity_redundancy(point,inpvars,ddomains,svec2log={},dcorr={}):
     '''
     returns:
        -1 --> point in domain
@@ -256,21 +302,48 @@ def test_similarity_redundancy(point,inpvars,ddomains):
     # Check visited domain
     bool_indomain, closest = in_explored_domain(point,ddomains,inpvars)
     # (a) Point already evaluated
-    if bool_indomain and str(closest) == str(point): return -1, closest
+    if bool_indomain and str(closest) == str(point): return -1, closest, svec2log,None
     # (b) Point in domain
-    elif bool_indomain: return 0, closest
-    # (c) guess not in visited domain
+    elif bool_indomain: return 0, closest, svec2log,None
+    # (c) guess not in visited domain [check conformers]
     else:
-       points  = folder_points(inpvars._dirll)
-       if len(points) == 0: return 1, None
-       closest = point.closest(points)
-       return 1, closest
+#      svectors  = folder_points(inpvars._dirll)
+       svec2log = get_logs_vecs(inpvars,dcorr,svec2log)
+       svectors = [TorPESpoint(svec) for svec in svec2log.keys()]
+       if len(svectors) == 0: return 1, None, svec2log,None
+       closest,distance = point.closest(svectors,mode=2)
+       return 1, closest, svec2log,distance
 #--------------------------------------------------#
-def test_connectivity(lzmat,zmatvals,cfactor,cmatrix):
+def get_logs_vecs(inpvars,dcorr,svec2log={}):
+    # conformers in folder
+    logs = folder_logs(inpvars._dirll)
+    if len(logs) == 0: return svec2log
+    # find equivalent points
+    for log in logs:
+        svec = log.split(".")[1]
+        if svec in svec2log: continue
+        svec2log[svec ] = log
+        if inpvars._enantio:
+           # (a) read log
+           zmatlines = gau.read_gaussian_log(inpvars._dirll+log)[10]
+           (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmatlines)
+           # (b) enantiomer
+           svec2 = str(enantiovec(lzmat,zmatvals,dcorr,inpvars))
+           svec2log[svec2] = log
+    # return data
+    return svec2log
+#--------------------------------------------------#
+def test_connectivity(lzmat,zmatvals,cfactor,cmatrix,skipconn=[]):
+    # create a copy of the reference matrix
+    cmatrix_ref     = np.matrix(cmatrix).tolist()
     # calculate connectivity of current geometry
     cmatrix_current = adjmatrix_from_zmatrix(lzmat,zmatvals,cfactor)
+    # skip pairs of atoms
+    for at1,at2 in skipconn:
+        cmatrix_ref[at1][at2] = False; cmatrix_current[at1][at2] = False
+        cmatrix_ref[at2][at1] = False; cmatrix_current[at2][at1] = False
     # return if test is passed
-    return cmatrix == cmatrix_current
+    return cmatrix_ref == cmatrix_current
 #--------------------------------------------------#
 def test_hessian():
     pass
@@ -346,7 +419,7 @@ def test_hsconstraints(lzmat,zmatvals,constr,which="hard"):
 def precheck_geom(lzmat,zmatvals,cmatrix,inpvars):
     bools = [None,None,None,None]
     # (a) connectivity test
-    bools[0] = test_connectivity(lzmat,zmatvals,inpvars._cfactor,cmatrix)
+    bools[0] = test_connectivity(lzmat,zmatvals,inpvars._cfactor,cmatrix,inpvars._skipconn)
     # (b) in domain test
     vec = TorPESpoint([zmatvals[ic] for ic in inpvars._tic])
     bools[1] = vec.is_in_domain(inpvars._tdomain)
