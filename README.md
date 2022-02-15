@@ -18,8 +18,8 @@ It was designed to seek the conformers of a given molecule by
 The following publications must be cited in any work presenting results obtained
 with _TorsiFlex_:
 
-- D. Ferro-Costas and A. Fernández-Ramos, Front. Chem., 2020, 8:16.
-- D. Ferro-Costas, I. Mosquera-Lois and A. Fernández-Ramos, J. Cheminformatics., 2021, 13:100.
+   - D. Ferro-Costas and A. Fernández-Ramos (**2020**). “A Combined Systematic-Stochastic Algorithm for the Conformational Search in Flexible Acyclic Molecules”. *Front. Chem.*, **8**:16.
+   - D. Ferro-Costas, I. Mosquera-Lois and A. Fernández-Ramos (**2021**). “_TorsiFlex_: an automatic generator of torsional conformers. Application to the twenty proteinogenic amino acids”. *J. Cheminformatics.*, **13**:100.
 
 ## Licensing and Distribution 
 
