@@ -15,8 +15,11 @@ It was designed to seek the conformers of a given molecule by
 
 ## How to cite
 
-D. Ferro-Costas and A. Fernández-Ramos, Front. Chem., 2020, 8:16.
+The following publications must be cited in any work presenting results obtained
+with _TorsiFlex_:
 
+- D. Ferro-Costas and A. Fernández-Ramos, Front. Chem., 2020, 8:16.
+- D. Ferro-Costas, I. Mosquera-Lois and A. Fernández-Ramos, J. Cheminformatics., 2021, 13:100.
 
 ## Licensing and Distribution 
 
