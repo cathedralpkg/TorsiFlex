@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -154,6 +154,23 @@ def get_numbonds(amatrix):
         for node2 in range(node1+1,nnodes):
             if amatrix[node1][node2] in [True,1]: nbonds += 1
     return nbonds
+#-----------------------------------------------#
+def isproper(node1,node2,node3,node4,alist=None,cmatrix=None):
+    '''
+    does 1-2-3-4 correspond to proper torsion??
+    alist: adjacency list given as dictionary (ugdict)
+    '''
+    if alist is not None:
+       if node2 not in alist[node1]: return False
+       if node3 not in alist[node2]: return False
+       if node4 not in alist[node3]: return False
+       return True
+    elif cmatrix is not None:
+       if cmatrix[node1][node2] not in (1,True): return False
+       if cmatrix[node2][node3] not in (1,True): return False
+       if cmatrix[node3][node4] not in (1,True): return False
+       return True
+    return None
 #-----------------------------------------------#
 def adjacency_matrix2list(amatrix):
     alist = {}

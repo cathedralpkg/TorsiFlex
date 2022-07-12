@@ -31,7 +31,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 *----------------------------------*
 | Module     :  modtorsiflex       |
-| Sub-module :  variables          |
+| Sub-module :  version            |
 | Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
@@ -41,45 +41,9 @@ values for some variables used in TorsiFlex
 '''
 
 #==========================================#
-# initial blank spaces to add to all print statements
-NIBS  = 4 ; IBS  = " "*NIBS
-NIBS2 = 7 ; IBS2 = " "*NIBS2
-#------------------------------------------#
-PREF1p = "optprec."
-PREF2p = "frqprec."
-PREF3p = "prec."
-PREF1s = "optstoc."
-PREF2s = "frqstoc."
-PREF3s = "stoc."
-#------------------------------------------#
-# name of folders of files
-DIRTEMPL      = "GauTemplates/"
-DIREXCLUD     = "Excluded/"
-DIRMSTOR      = "MsTor/"
-# name of files
-IFILE         = "torsiflex.inp"
-MINGTXT       = "minG.txt"
-ENERGYSUMLL   = "ll_energies.txt"
-DOMAINS       = "conf,enan,repe,fail,excl,wimag".split(",")
-FDOMAINS      = "domains.txt"
-MSTORIF1      = DIRMSTOR+"mstor.dat"
-MSTORIF2      = DIRMSTOR+"hess.dat"
-# Gaussian templates
-GAUTEMPL      = "TemplatesGAUSSIAN.txt"
-TEMPLMINOPTLL = DIRTEMPL+"min_optLL"
-TEMPLMINOPTHL = DIRTEMPL+"min_optHL"
-TEMPLMINFRQLL = DIRTEMPL+"min_frqLL"
-TEMPLMINFRQHL = DIRTEMPL+"min_frqHL"
-TEMPLTSOPTLL  = DIRTEMPL+"ts_optLL"
-TEMPLTSOPTHL  = DIRTEMPL+"ts_optHL"
-TEMPLTSFRQLL  = DIRTEMPL+"ts_frqLL"
-TEMPLTSFRQHL  = DIRTEMPL+"ts_frqHL"
-# File with all conformers
-ALLCONFS      = "CONFORMERS.xyz"
-# Correlation LL-HL
-LLHLCORRFILE  = "corrLLHL.txt"
+PROGNAME      = "torsiflex.py"
+PROGNAMEnopy  = "TorsiFlex"
+VERSION       = "2022.1"
+DATE          = "2022-Jul-12"
+PROGVER       = "v%s (%s)"%(VERSION,DATE)
 #==========================================#
-EPS_KCALMOL   = 0.100 # energy difference to compare geoms (kcal/mol)
-#==========================================#
-
-

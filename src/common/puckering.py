@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

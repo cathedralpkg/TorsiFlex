@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -145,6 +145,13 @@ class UGRAPH:
           self._nedges -= 1
       #-----------------#
 
+      def set_from_alist(self,alist):
+          for node1 in alist:
+              self.add_node(node1)
+              for node2 in alist[node1]:
+                  self.add_node(node2)
+                  self.add_edge(node1,node2)
+
       def set_from_amatrix(self,amatrix):
           '''
           set graph from adjacency matrix
@@ -201,7 +208,7 @@ class UGRAPH:
 
 
       def neighbors(self,node):
-          return self._ugdict[node].copy()
+          return list(self._ugdict[node])
 
 
       #-------------#
@@ -236,8 +243,7 @@ class UGRAPH:
 
       def dfsearch(self,start_idx):
           '''
-          Depth First Search
-          Breadth First Search for undirected graph
+          Depth First Search for undirected graph
           Input:
             * graph_dict: a dict of the graph representing the
                           adjacency list
@@ -352,20 +358,30 @@ class UGRAPH:
           # completely visited.
           color[node2] = 2
 
-      def nodes_in_cycles(self):
+      def get_cycles(self):
           '''
           graph coloring method --> uses dfs_cycle
-          Good when the graph is not very dense in edges; in such case, use v2
-          For molecules, v1 is the best option
+          Good when the graph is not very dense in edges;
           '''
-          if self._nnodes - self._nedges == 1: return []
+          # initialize cycles
+          cycles = {}
 
+          # If no cycles, return
+          if self._nnodes - self._nedges == 1: return cycles
+
+          # DFS in order to determine cycles
           color = [0] * self._nnodes
           par   = [0] * self._nnodes # parent of node
           mark  = [0] * self._nnodes
           self.dfs_cycle(0,-1,color=color,mark=mark,par=par)
-          nodes_in_cycles = [node_i for node_i,mark_i in enumerate(mark) if mark_i != 0]
-          return nodes_in_cycles
+
+          # Update dictionary of cycles
+          for node,cycle in enumerate(mark):
+              if cycle == 0: continue
+              cycles[cycle] = cycles.get(cycle,[]) + [node]
+
+          # Return data
+          return cycles
 
       def remove_external(self):
           '''
@@ -389,32 +405,93 @@ class UGRAPH:
           remaining_nodes = [node for node in range(self._nnodes) if sum(cmatrix[node,:] != 0)]
           return remaining_nodes
 
-      def longest_path_from_node(self,start_idx,visited=[]):
+      def get_longest_path(self,n0,fragment,visited=set([])):
           '''
-          Naive algorithm to explore the graph, starting at start_idx,
-          and return the longest path
+          Uses DFS to return the longest path from n0
+          -- via recursive implementation --
+
+          n0      : node to start from
+          fragment: nodes where the search is restricted to
+          visited : already visited nodes
           '''
-          # Get neighbors, excluding previously visited ones
-          neighbors = [node for node in self._ugdict[start_idx] if node not in visited]
-
-          if len(neighbors) == 0: return [start_idx]
-
+          # initialize longest path
+          longest_path = []
+          # Update visited nodes
+          visited = set(visited).union([n0])
+          # Get neighbors of n0, excluding previously visited ones
+          neighbors = self._ugdict[n0].intersection(fragment).difference(visited)
           # Get longest from non-visited neighbors
-          length = - float("inf")
-          for neighbor in neighbors:
-              visited_i = visited + [start_idx,neighbor]
-              path_i    = self.longest_path_from_node(neighbor,visited=visited_i)
-              if len(path_i) > length:
-                 length = len(path_i)
-                 the_path = path_i
-          return [start_idx] + the_path
+          for n1 in neighbors:
+              visited_i = visited.union([n1])
+              path_i    = self.get_longest_path(n1,fragment,visited_i)
+              # update longest path
+              if len(path_i) > len(longest_path): longest_path = path_i
+          # Return longest path
+          return [n0] + longest_path
 
-      def longest_path(self):
-          # DFS to find one end point of longest path
-          lnode = self.longest_path_from_node(0)[-1]
-          # DFS to find the actual longest path
-          path = self.longest_path_from_node(lnode)
-          return path
+      def get_smallest_cycle(self,n0,fragment,visited=set([])):
+          '''
+          Uses BFS to find smallest cycle (data structure: Queue)
+      
+          n0      : node to start from
+          fragment: nodes where the search is restricted to
+                    (all of them must be part of a cycle)
+          visited : already visited nodes
+          '''
+          # Initialize path
+          path = [n0]
+          # Update visited with first node of path
+          visited   = set(visited).union([n0])
+          # Get neighbors of n0, excluding previously visited ones
+          neighbors = set(self._ugdict[n0].intersection(fragment).difference(visited))
+          # no neighbors??
+          if len(neighbors) == 0: return path
+          # Select neighbor and Initialize path
+          n1     = neighbors.pop()
+          path  += [n1]
+          paths  = [path]
+          # Find shorted cycle in n0-->n1 direction until reaching nj / nj in visited
+          while True:
+              path   = paths.pop(0)
+              idx_m  = path[-2]
+              idx_n  = path[-1]
+              neighbors = set(self._ugdict[idx_n].intersection(fragment).difference([idx_m]))
+              assert len(neighbors) != 0
+              for idx_o in neighbors:
+                  # avoid going backwards in cycle
+                  if idx_o in path[1:]: continue
+                  # add neighbor to path and save path
+                  paths.append(path+[idx_o])
+                  # Cycle found!
+                  if idx_o in visited: return path
+
+
+   #  def longest_path_from_node(self,start_idx,visited=[]):
+   #      '''
+   #      Naive algorithm to explore the graph, starting at start_idx,
+   #      and return the longest path
+   #      '''
+   #      # Get neighbors, excluding previously visited ones
+   #      neighbors = [node for node in self._ugdict[start_idx] if node not in visited]
+
+   #      if len(neighbors) == 0: return [start_idx]
+
+   #      # Get longest from non-visited neighbors
+   #      length = - float("inf")
+   #      for neighbor in neighbors:
+   #          visited_i = visited + [start_idx,neighbor]
+   #          path_i    = self.longest_path_from_node(neighbor,visited=visited_i)
+   #          if len(path_i) > length:
+   #             length = len(path_i)
+   #             the_path = path_i
+   #      return [start_idx] + the_path
+
+   #  def longest_path(self):
+   #      # DFS to find one end point of longest path
+   #      lnode = self.longest_path_from_node(0)[-1]
+   #      # DFS to find the actual longest path
+   #      path = self.longest_path_from_node(lnode)
+   #      return path
 
       def get_layers(self,center):
           '''
@@ -502,4 +579,6 @@ if __name__ == "__main__":
     graph.add_edge(11-1, 13-1)
     graph.add_edge(5-1 , 11-1)
     graph.add_edge(6-1 , 13-1)
-    print([at+1 for at in graph.nodes_in_cycles()])
+    cycles = graph.get_cycles()
+    nodes_in_cycles = [node for nodes in cycles.values() for node in nodes]
+    print([at+1 for at in nodes_in_cycles])

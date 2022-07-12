@@ -3,9 +3,9 @@
 ## About _TorsiFlex_
 
     Name of the Program: TorsiFlex
-    Program Version : 2021.3
-    Program Version Date: Nov 22, 2021
-    Manual  Version Date: Nov 22, 2021
+    Program Version : 2022.1
+    Program Version Date: Jul 12, 2022
+    Manual  Version Date: Jul 12, 2022
 
 _TorsiFlex_ is an user-friendly program written in Python 3.
 It was designed to seek the conformers of a given molecule by
@@ -21,13 +21,14 @@ with _TorsiFlex_:
    - D. Ferro-Costas and A. Fernández-Ramos (**2020**). “A Combined Systematic-Stochastic Algorithm for the Conformational Search in Flexible Acyclic Molecules”. *Front. Chem.*, **8**:16.
    - D. Ferro-Costas, I. Mosquera-Lois and A. Fernández-Ramos (**2021**). “_TorsiFlex_: an automatic generator of torsional conformers. Application to the twenty proteinogenic amino acids”. *J. Cheminformatics.*, **13**:100.
 
+
 ## Licensing and Distribution 
 
-_TorsiFlex version 2021.3_
+_TorsiFlex version 2022.1_
 
 MIT LICENSE
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and Antonio Fernandez Ramos (qf.ramos@usc.es)
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
@@ -71,6 +72,7 @@ as well as the following Python libraries:
    - numpy
    - os
    - random
+   - rdkit
    - scipy
    - sys
    - time

@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,12 +32,12 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  tfgau              |
-| Last Update:  2021/11/22 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
 This module contains things
-related to Gincore,aussian
+related to Gaussian
 '''
 
 #==================================================#
@@ -52,6 +52,7 @@ from   common.internal   import zmat2xcc
 from   common.Molecule   import Molecule
 from   common.files      import mkdir_recursive
 from   common.Exceptions import ExeNotDef, ExeNotFound, LevelNotFound
+from   common.pgs        import get_pgs
 #--------------------------------------------------#
 import modtorsiflex.tfvars      as tvars
 import modtorsiflex.tfrw        as rw
@@ -70,7 +71,7 @@ gt_opt_min1 = '''%nproc=[nproc]
 #p [level]
 scf=(tight)
 iop(99/9=1,99/14=3)
-opt=([optmode],tight,MaxCycles=200)
+opt=([optmode],tight,maxcycle=200)
 
 --Optimization of minimum--
 
@@ -86,7 +87,7 @@ gt_opt_min2 = '''%nproc=[nproc]
 #p [level]
 scf=(verytight)
 iop(99/9=1,99/14=3)
-opt=([optmode],verytight,MaxCycles=200)
+opt=([optmode],verytight,maxcycle=200)
 
 --Optimization of minimum--
 
@@ -102,7 +103,7 @@ gt_opt_ts1 = '''%nproc=[nproc]
 #p [level]
 scf=(tight)
 iop(99/9=1,99/14=3)
-opt=([optmode],tight,calcfc,ts,noeigentest,MaxCycles=200)
+opt=([optmode],tight,calcfc,ts,noeigentest,maxcycle=200)
 
 --Optimization of transition state--
 
@@ -118,7 +119,7 @@ gt_opt_ts2 = '''%nproc=[nproc]
 #p [level]
 scf=(verytight)
 iop(99/9=1,99/14=3)
-opt=([optmode],verytight,calcfc,ts,noeigentest,MaxCycles=200)
+opt=([optmode],verytight,calcfc,ts,noeigentest,maxcycle=200)
 
 --Optimization of transition state--
 
@@ -160,26 +161,74 @@ freq=noraman
 
 
 #==================================================#
-def generate_templates():
-    # Create folder for templates
-    mkdir_recursive(tvars.DIRTEMPL)
-    # write templates
+#          FUNCTIONS RELATED TO TEMPLATES          #
+#==================================================#
+def generate_templates(mode=1):
+    '''
+    '''
+    #--------------------#
+    def aux_templates(key,string_i):
+        string  = ""
+        string += "#--------------#\n"
+        string += "start_%s\n"%key
+        string += string_i
+        string += "end_%s\n"%key
+        string += "#~~~~~~~~~~~~~~#\n\n"
+        return string
+    #--------------------#
     ngen = 0
-    for file_i, string_i in [(tvars.TEMPLMINOPTLL,gt_opt_min1),\
-                             (tvars.TEMPLMINOPTHL,gt_opt_min2),\
-                             (tvars.TEMPLMINFRQLL,gt_freq1   ),\
-                             (tvars.TEMPLMINFRQHL,gt_freq2   ),\
-                             (tvars.TEMPLTSOPTLL , gt_opt_ts1),\
-                             (tvars.TEMPLTSOPTHL , gt_opt_ts2),\
-                             (tvars.TEMPLTSFRQLL , gt_freq1  ),\
-                             (tvars.TEMPLTSFRQHL , gt_freq2  )]:
-        # check existency of files
-        if os.path.exists(file_i): continue
-        # create file
-        with open(file_i,'w') as asdf: asdf.write(string_i)
-        ngen += 1
+    #--------------------#
+    if mode == 0:
+       # Create folder for templates
+       mkdir_recursive(tvars.DIRTEMPL)
+       for file_i, string_i in [(tvars.TEMPLMINOPTLL,gt_opt_min1),\
+                                (tvars.TEMPLMINOPTHL,gt_opt_min2),\
+                                (tvars.TEMPLMINFRQLL,gt_freq1   ),\
+                                (tvars.TEMPLMINFRQHL,gt_freq2   ),\
+                                (tvars.TEMPLTSOPTLL , gt_opt_ts1),\
+                                (tvars.TEMPLTSOPTHL , gt_opt_ts2),\
+                                (tvars.TEMPLTSFRQLL , gt_freq1  ),\
+                                (tvars.TEMPLTSFRQHL , gt_freq2  )]:
+           # check existency of files
+           if os.path.exists(file_i): continue
+           # create file
+           with open(file_i,'w') as asdf: asdf.write(string_i)
+           ngen += 1
+    #--------------------#
+    if mode == 1 and not os.path.exists(tvars.GAUTEMPL):
+       string  = aux_templates("MINOPTLL",gt_opt_min1)
+       string += aux_templates("MINOPTHL",gt_opt_min2)
+       string += aux_templates("MINFRQLL",gt_freq1   )
+       string += aux_templates("MINFRQHL",gt_freq2   )
+       string += aux_templates("TSOPTLL" ,gt_opt_ts1 )
+       string += aux_templates("TSOPTHL" ,gt_opt_ts2 )
+       string += aux_templates("TSFRQLL" ,gt_freq1   )
+       string += aux_templates("TSFRQHL" ,gt_freq2   )
+       # create file
+       with open(tvars.GAUTEMPL,'w') as asdf: asdf.write(string)
+       ngen += 1
     #--------------------#
     return ngen
+#--------------------------------------------------#
+def read_templates():
+    template = {}
+    if not os.path.exists(tvars.GAUTEMPL): return template
+    # Read lines in file
+    with open(tvars.GAUTEMPL,'r') as asdf: lines = asdf.readlines()
+    # Extract data
+    current = None
+    for line in lines:
+        if line.startswith("start_"):
+           current = line.split("_")[1].strip().lower()
+           template[current] = []
+        elif line.startswith("end_"):
+           current = None
+        elif current is not None:
+           template[current].append( line )
+    return template
+#==================================================#
+
+#==================================================#
 #--------------------------------------------------#
 def check_executable():
     print(tvars.IBS+"   Checking Gaussian executable file...")
@@ -196,10 +245,6 @@ def check_executable():
        end_program = True
     print("")
     return end_program
-#--------------------------------------------------#
-def fccards_from_log(log):
-    gcc,Fcc = gau.read_gaussian_log(log)[6:8]
-    return gau.get_fccards_string(gcc,Fcc)
 #--------------------------------------------------#
 def generate_gjf(template,i_mname,inpvars,lzmat,zmatvals,case,string_fccards=None):
     # Name of files/folders according to case
@@ -282,7 +327,8 @@ def write_gjf(ifile,template,level,charge,multipl,nproc,mem,lzmat,zmatvals,optmo
 #--------------------------------------------------#
 def read_normal_log(ofile,inpvars,case):
     # keylvl from inpvars according to case
-    if   case == "LL": keylvl  = inpvars._keyll
+    if   case is None: keylvl  = None
+    elif case == "LL": keylvl  = inpvars._keyll
     elif case == "HL": keylvl  = inpvars._keyhl
     else             : raise Exception
     # reading data
@@ -290,6 +336,10 @@ def read_normal_log(ofile,inpvars,case):
     try: logdata = gau.read_gaussian_log(ofile,target_level=keylvl)
     except LevelNotFound: print(" "*11+exception_line); sys.exit()
     commands,comment,ch,mtp,symbols,xcc,gcc,Fcc,energy,statusFRQ,ozmat,level = logdata
+    # rotational sigma
+    symbols,atonums = fncs.symbols_and_atonums(symbols)
+    masses          = fncs.symbols2masses(symbols)
+    pgroup,rotsigma = get_pgs(atonums,masses,xcc)
     # it may happen that in FRQ calculation zmatrix is not found!
     try:
        lzmat,zmatvals,zmatatoms = gau.convert_zmat(ozmat)[0]
@@ -304,7 +354,9 @@ def read_normal_log(ofile,inpvars,case):
     print("           energy (%s) = %.6f hartree"%(level,energy))
     print("           final vector: %s"%str(vec))
     if statusFRQ >= 0: print("           num imag frq: %i"%statusFRQ)
-    return statusFRQ,vec,zmatvals,zmatatoms
+    # return data
+    basic = (xcc,atonums,ch,mtp,energy,pgroup,rotsigma,gcc,Fcc)
+    return statusFRQ,vec,lzmat,zmatvals,zmatatoms,basic
 #--------------------------------------------------#
 def execute(template,i_mname,inpvars,lzmat,zmatvals,case,log_ll=None):
     '''
@@ -339,18 +391,17 @@ def execute(template,i_mname,inpvars,lzmat,zmatvals,case,log_ll=None):
        else:
           print("           output file does not end with Normal termination!")
           statusOPT = -1
-
     #-------------------#
     # Read Gaussian log #
     #-------------------#
     vec, statusFRQ = None, -1
     # Read output file
-    if statusOPT == 0: statusFRQ,vec,zmatvals,zmatatoms = read_normal_log(ofile,inpvars,case)
-    else             : zmatatoms = None
+    if statusOPT == 0: statusFRQ,vec,lzmat,zmatvals,zmatatoms,basic = read_normal_log(ofile,inpvars,case)
+    else             : zmatatoms,basic = None, None
     # return data
-    return (ofile,statusOPT,statusFRQ,vec,zmatvals,zmatatoms)
+    return (ofile,statusOPT,statusFRQ,vec,zmatvals,zmatatoms,basic)
 #--------------------------------------------------#
-def status_from_log(logfile,inpvars):
+def status_from_log(logfile,inpvars,dcorr):
     '''
     About statusOPT, it returns:
        * -1 if the calculation failed
@@ -361,29 +412,38 @@ def status_from_log(logfile,inpvars):
     '''
     assert os.path.exists(logfile)
 
+
+    vec1,evec1 = None, None
+    vec2,evec2 = None, None
+    statusOPT  = -1
+    statusFRQ  = -1
+
+    # Input vector
+    try:
+       zmat = gau.zmat_from_loginp(logfile)
+       (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmat)
+       vec1 = TorPESpoint(tfh.zmat2vec(zmatvals,inpvars._tic),inpvars._tlimit)
+       if inpvars._enantio:
+          evec1 = tfh.enantiovec(lzmat,zmatvals,dcorr,inpvars)
+    except:
+       vec1,evec1 = None, None
+
     # Log file does not end with Normal termination?
-    if not gau.normal_termination(logfile):
-       statusOPT = -1
-       statusFRQ = -1
-       vec       = None
-    # Ends with normal termination
-    else:
+    if gau.normal_termination(logfile):
        logdata   = gau.read_gaussian_log(logfile)
        statusOPT = 0
        statusFRQ = logdata[ 9]
        zmatlines = logdata[10]
-       if zmatlines is None:
-          statusOPT = -1
-          statusFRQ = -1
-          vec       = None
-       else:
+       if zmatlines is not None:
           (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmatlines)
           # put angles in (0,360) (sometimes Gaussian returns an angle > 360)
           for ic in inpvars._tic: zmatvals[ic] %= 360
           # final vector
-          vec = TorPESpoint(tfh.zmat2vec(zmatvals,inpvars._tic),inpvars._tlimit)
+          vec2 = TorPESpoint(tfh.zmat2vec(zmatvals,inpvars._tic),inpvars._tlimit)
+          if inpvars._enantio:
+             evec2 = tfh.enantiovec(lzmat,zmatvals,dcorr,inpvars)
     # Return data
-    return statusOPT,statusFRQ,vec
+    return statusOPT,statusFRQ,(vec1,evec1),(vec2,evec2)
 #==================================================#
 
 
@@ -435,66 +495,6 @@ def get_imag_freq(log,fscal):
     except: ifreq = None
     # return
     return ifreq
-#--------------------------------------------------#
-def log_data(log,inpvars,fscal,folder="./"):
-    if inpvars._ts: fmode = -1
-    else          : fmode = 0
-    # name from log
-    name    = log.split(".")[-2]
-    point   = TorPESpoint(name,inpvars._tlimit)
-    # Read log file
-    logdata = gau.read_gaussian_log(folder+log)
-    # prepare data
-    logdata = prepare_log_data(logdata)
-    ch,mtp,V0,symbols,symbols_wo,xcc_wo,gcc_wo,Fcc_wo,lzmat,zmatvals = logdata
-
-    # string for fccards
-    string_fccards = gau.get_fccards_string(gcc_wo,Fcc_wo)
-
-    # generate Molecule instance
-    molecule = Molecule()
-    molecule.setvar(xcc=xcc_wo,Fcc=Fcc_wo,V0=V0)
-    molecule.setvar(fscal=fscal)
-    molecule.setvar(symbols=symbols_wo)
-    molecule.setvar(ch=ch,mtp=mtp)
-    molecule.prepare()
-    molecule.setup()
-    molecule.ana_freqs()
-
-    # Calculate partition functions for the temperatures
-    qtot, V1, qis = molecule.calc_pfns(inpvars._temps,fmode=fmode)
-    qtr,qrot,qvib,qele = qis
-    Qrv = np.array([xx*yy for xx,yy in zip(qrot,qvib)])
-    # Calculate partition functions at target temperature
-    qtot, V1, qis = molecule.calc_pfns([inpvars._temp],fmode=fmode)
-    # remove rotsigma for Gibbs
-    gibbs = V1-pc.KB*inpvars._temp*np.log(qtot[0]*molecule._rotsigma)
-
-    # imaginary frequency
-    if   len(molecule._ccimag) == 0: ifreq = None
-    elif len(molecule._ccimag) == 1: ifreq = [ifreq for ifreq,ivec in list(molecule._ccimag)][0]
-    else                           : ifreq = None
-
-    # weight for this conformer
-    if inpvars._enantio and molecule._pgroup.lower() == "c1": weight = 2
-    else                                                    : weight = 1
-    # pack and return data
-    conf_tuple = (point,V0,V1,gibbs,weight,Qrv,ifreq,lzmat,zmatvals,log)
-    return conf_tuple,symbols,string_fccards
-#--------------------------------------------------#
-def folder_data(folder,inpvars,fscal):
-    # the log files
-    logs = [fname for fname in os.listdir(folder) \
-            if fname.endswith(".log")]
-    # First preconditioned, then stochastic!
-    logs_prec = [log for log in logs if "prec." in log]
-    logs_stoc = [log for log in logs if "stoc." in log]
-    logs = sorted(logs_prec)+sorted(logs_stoc)
-    # Calculate partition functions at different temperatures
-    for log in logs:
-        conf_tuple,symbols,string_fccards = log_data(log,inpvars,fscal,folder)
-        #yield data
-        yield (conf_tuple,symbols)
 #==================================================#
 
 

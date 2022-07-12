@@ -1,57 +1,56 @@
- h
- o    1 oh2     
- c    2 co3         1 coh3      
- c    3 cc4         2 cco4          1 dih4   
- c    4 cc5         3 ccc5          2 dih5   
- c    5 cc6         4 ccc6          3 dih6   
- h    6 hc7         5 hcc7          4 dih7   
- h    3 hc8         2 hco8          4 dih8   
- h    3 hc9         2 hco9          4 dih9   
- h    4 hc10        3 hcc10         5 dih10  
- h    4 hc11        3 hcc11         5 dih11  
- h    5 hc12        4 hcc12         6 dih12  
- h    5 hc13        4 hcc13         6 dih13  
- h    6 hc14        5 hcc14         7 dih14  
- h    6 hc15        5 hcc15         7 dih15  
- 
-oh2         0.950000
-co3         1.380000
-coh3        109.471
-cc4         1.500000
-cco4        109.471
-dih4        180.000
-cc5         1.500000
-ccc5        109.471
-dih5        180.000
-cc6         1.500000
-ccc6        109.471
-dih6        180.000
-hc7         1.070000
-hcc7        109.471
-dih7        180.000
-hc8         1.070000
-hco8        109.471
-dih8        120.000
-hc9         1.070000
-hco9        109.471
-dih9        240.000
-hc10        1.070000
-hcc10       109.471
-dih10       120.000
-hc11        1.070000
-hcc11       109.471
-dih11       240.000
-hc12        1.070000
-hcc12       109.471
-dih12       120.000
-hc13        1.070000
-hcc13       109.471
-dih13       240.000
-hc14        1.070000
-hcc14       109.471
-dih14       120.000
-hc15        1.070000
-hcc15       109.471
-dih15       240.000
- 
- 
+ O 
+ C    1   dist02
+ C    2   dist03   1   angl03
+ C    3   dist04   2   angl04   1   ptor04
+ C    4   dist05   3   angl05   2   ptor05
+ H    5   dist06   4   angl06   3   ptor06
+ H    1   dist07   2   angl07   3   ptor07
+ H    5   dist08   4   angl08   6   itor08
+ H    5   dist09   4   angl09   6   itor09
+ H    4   dist10   3   angl10   5   itor10
+ H    4   dist11   3   angl11   5   itor11
+ H    3   dist12   2   angl12   4   itor12
+ H    3   dist13   2   angl13   4   itor13
+ H    2   dist14   1   angl14   3   itor14
+ H    2   dist15   1   angl15   3   itor15
+
+dist02      1.39334
+dist03      1.50794
+angl03    111.89973
+dist04      1.49270
+angl04    113.57836
+ptor04     60.02597
+dist05      1.48882
+angl05    115.19310
+ptor05     59.99722
+dist06      1.11723
+angl06    111.26310
+ptor06     96.90515
+dist07      0.97278
+angl07    112.04192
+ptor07      5.89425
+dist08      1.11810
+angl08    109.70351
+itor08    116.26046
+dist09      1.09806
+angl09    115.22337
+itor09   -121.88996
+dist10      1.10953
+angl10    107.54313
+itor10    120.65829
+dist11      1.11452
+angl11    107.39874
+itor11   -121.41645
+dist12      1.12433
+angl12    105.58783
+itor12   -115.97036
+dist13      1.10922
+angl13    111.04757
+itor13    130.28396
+dist14      1.11703
+angl14    109.21413
+itor14   -117.61743
+dist15      1.08847
+angl15    107.72248
+itor15    125.98384
+

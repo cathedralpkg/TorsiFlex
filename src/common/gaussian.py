@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -81,7 +81,7 @@ KEYFCHK = "GauFchk"
 #==========================================================#
 def convert_zmat(lines):
     '''
-    basically, a modification of read_xyz_zmat (common.files)
+    basically, a modification of read_zmat (common.files)
     '''
     lines_values  = [line.replace("="," ") for line in lines if "="     in line]
     lines_zmatrix = [line.replace(","," ") for line in lines if "=" not in line]
@@ -513,7 +513,8 @@ def zmat_from_loginp(log):
     '''
     with open(log,'r') as asdf: lines = "".join(asdf.readlines())
     if " Symbolic Z-matrix:" not in lines: return None
-    lines = lines.split("Symbolic Z-matrix:")[1].split("NAtoms= ")[0].strip()
+    #lines = lines.split("Symbolic Z-matrix:")[1].split("NAtoms= ")[0].strip()
+    lines = lines.split("Symbolic Z-matrix:")[1].strip()
     zmat = []
     sep = ","
     for line in lines.split("\n"):
@@ -522,6 +523,7 @@ def zmat_from_loginp(log):
             sep = "="
             continue
         line = line.strip()
+        if line == "": break
         line = sep.join(line.split())
         zmat.append(line)
     return zmat

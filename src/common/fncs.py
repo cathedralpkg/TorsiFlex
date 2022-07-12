@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -68,6 +68,16 @@ numbers  = "0123456789"                        #
 
 
 #===============================================#
+def num_of_digits(number):
+    '''
+    returns number of digits to represent a give number
+    use for nice formatting
+    '''
+    nn = np.log10(number)
+    if (nn - int(nn)) == 0.0: nn = int(nn)+1
+    else                    : nn = int(np.ceil(nn))
+    return nn
+#---------------------------------------------#
 def exp128(arg):
     try   :
         if arg < -700 or arg > 700: return np.exp(np.float128(arg))
@@ -1376,33 +1386,6 @@ def scale_freqs(freqs,fscal):
     return [freq*fscal for freq in freqs]
 #===============================================#
 
-
-#=============================================#
-#        Functions related to extrema         #
-#=============================================#
-def minima_in_list(lx,ly):
-    '''
-    in the list, it find points
-    that may be local minima
-    Returns the list of x-guesses
-    '''
-    np = len(lx)
-    # initialize guesses
-    guesses = []
-    # initial point
-    if ly[0] <= ly[1]:
-       guesses.append(lx[0])
-    # mid points
-    for idx in range(1,np-1):
-        xi, yi = lx[idx-1],ly[idx-1]
-        xj, yj = lx[idx  ],ly[idx  ]
-        xk, yk = lx[idx+1],ly[idx+1]
-        if yj <= yi and yj <= yk: guesses.append(xj)
-    # final points
-    if ly[-1] <= ly[-2]:
-       guesses.append(lx[-1])
-    return guesses
-#=============================================#
 
 #=============================================#
 # Functions to print certains variables       #

@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -147,9 +147,9 @@ def read_xyz(xyzfile):
     if "[BOHR]" not in comment: xcc = [xi/ANGSTROM for xi in xcc]
     return xcc, symbs, masses
 #-----------------------------------------------#
-def read_xyz_zmat(xyzfile):
+def read_zmat(xyzfile):
     '''
-    Read standard .xyz file in internal coordinates
+    Read standard .zmat file in internal coordinates
     All related to zmatrices --> angstroms and degrees
     '''
     lines = read_file(xyzfile)

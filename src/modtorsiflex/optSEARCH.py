@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  optSEARCH          |
-| Last Update:  2021/11/22 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -52,7 +52,7 @@ import common.internal          as intl
 import common.fncs              as fncs
 import common.Exceptions        as exc
 from   common.physcons          import ANGSTROM
-from   common.files             import write_zmat
+from   common.files             import write_zmat,write_gtsfile, read_zmat
 #----------------------------------------------------------#
 import modtorsiflex.printing    as pp
 import modtorsiflex.tfvars      as tvars
@@ -65,14 +65,12 @@ from   modtorsiflex.tpespoint   import TorPESpoint
 
 
 #==================================================#
-def gen_guess_zmatrix(vec,i_zmatvals,inpvars,log,distance):
+def gen_guess_zmatrix(vec,i_zmatvals,inpvars,zmat,distance):
     # read z-matrix from closest domain
     use_default = True
     try:
-       logdata   = gau.read_gaussian_log(inpvars._dirll+log)
-       zmatlines = logdata[10]
-       (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmatlines)
-       sprint("using Z-matrix from stored file (%s)"%log,tvars.NIBS2+4)
+       lzmat,zmatvals,zmatatoms = read_zmat(inpvars._dirll+zmat)[0]
+       sprint("using Z-matrix from stored file (%s)"%zmat,tvars.NIBS2+4)
        sprint("distance to stored Z-matrix: %.0f degrees"%distance,tvars.NIBS2+4)
        use_default = False
     except: use_default = True
@@ -99,18 +97,21 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
     try   : tfh.create_dir(inpvars._dirll)
     except: raise exc.END
 
-    #====================================#
-    # Print information before searching #
-    #====================================#
-    if inpvars._ts: file1,file2 = tvars.TEMPLTSOPTLL,tvars.TEMPLTSFRQLL
-    else          : file1,file2 = tvars.TEMPLMINOPTLL,tvars.TEMPLMINFRQLL
-    # do templates exist??
-    if not os.path.exists(file1): pp.print_filenotfound(file1,tvars.NIBS2,1); raise exc.END
-    if not os.path.exists(file2): pp.print_filenotfound(file2,tvars.NIBS2,1); raise exc.END
-    # read templates
-    with open(file1,'r') as asdf: loptLL = asdf.readlines()
-    with open(file2,'r') as asdf: lfrqLL = asdf.readlines()
-    pp.print_infoLLsearch(inpvars,file1,file2,loptLL,lfrqLL)
+    #============================================#
+    # Print information + Templates single point #
+    #============================================#
+    if not os.path.exists(tvars.GAUTEMPL):
+       pp.print_template_notfound()
+       raise exc.END
+    templates = itf.read_templates()
+    if inpvars._ts: keyoptLL,keyfrqLL = "tsoptll" ,"tsfrqll"
+    else          : keyoptLL,keyfrqLL = "minoptll","minfrqll"
+    try   : loptLL = templates[keyoptLL]
+    except: pp.print_error_template(keyoptLL); raise exc.END
+    try   : lfrqLL = templates[keyfrqLL]
+    except: pp.print_error_template(keyfrqLL); raise exc.END
+    pp.print_infoLLsearch(inpvars,keyoptLL,keyfrqLL,loptLL,lfrqLL)
+    
 
     # Check gaussian software
     end_program = itf.check_executable()
@@ -133,14 +134,14 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
     #=========================#
     if inpvars._prec  is not False:
        sprint("Preconditioned algorithm will be used!",tvars.NIBS2)
-       prefix1,prefix2,prefix3 = "optprec.","frqprec.","prec."
+       prefix1,prefix2,prefix3 = tvars.PREF1p, tvars.PREF2p, tvars.PREF3p
        if inpvars._prec != (1,1):
           sprint(" - Number of blocks: %i"%inpvars._prec[0],tvars.NIBS2)
           sprint(" - Selected block  : %i"%inpvars._prec[1],tvars.NIBS2)
        sprint()
     else:
        sprint("Stochastic algorithm will be used!",tvars.NIBS2,1)
-       prefix1,prefix2,prefix3 = "optstoc.","frqstoc.","stoc."
+       prefix1,prefix2,prefix3 = tvars.PREF1s, tvars.PREF2s, tvars.PREF3s
 
     # save initial zmat
     i_lzmat = list(lzmat)
@@ -150,7 +151,7 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
     nopt  = 0
     nfrq  = 0
     nsp   = 0
-    svec2log = tfh.get_logs_vecs(inpvars,dcorr,svec2log={})
+    svec2zmat = tfh.get_zmat_vecs(inpvars,dcorr,svec2zmat={})
     for vecA in tfh.yield_angles(inpvars):
 
         count += 1
@@ -164,8 +165,8 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         # analyze geometry #
         #------------------#
         sprint("preparing Z-matrix...",tvars.NIBS2+4)
-        args = (vecA,inpvars,ddomains,svec2log,dcorr)
-        bool_guess, closest, svec2log, distance = tfh.test_similarity_redundancy(*args)
+        args = (vecA,inpvars,ddomains,svec2zmat,dcorr)
+        bool_guess, closest, svec2zmat, distance = tfh.test_similarity_redundancy(*args)
         if bool_guess == -1:
            sprint("already listed in %s"%tvars.FDOMAINS,tvars.NIBS2+4)
            sprint()
@@ -174,8 +175,8 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
            sprint("similarity test is negative: in the domain of %s"%str(closest),tvars.NIBS2+4)
            sprint()
            continue
-        closest_log = svec2log.get(str(closest),None)
-        args = (vecA,i_zmatvals,inpvars,closest_log,distance)
+        closest_zmat = svec2zmat.get(str(closest),None)
+        args = (vecA,i_zmatvals,inpvars,closest_zmat,distance)
         zmatvals = gen_guess_zmatrix(*args)
         if inpvars._enantio:
            vecA_enantio = tfh.enantiovec(lzmat,zmatvals,dcorr,inpvars)
@@ -184,12 +185,12 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         #- - - - - - - - - #
         # 1st set of TESTS #
         #- - - - - - - - - #
-        bools = tfh.precheck_geom(lzmat,zmatvals,cmatrix,inpvars)
+        bools,extra = tfh.precheck_geom(lzmat,zmatvals,cmatrix,inpvars)
         if (inpvars._tests[0][0] == 1) and (bools[0] is False):
            sprint("connectivity test is negative: different connectivity!",tvars.NIBS+7,1)
            continue
         if (bools[1] is False):
-           sprint("torsion angle out of domain...",tvars.NIBS+7,1)
+           sprint("torsion angle out of domain (torsion%i)..."%(extra[1]+1),tvars.NIBS+7,1)
            continue
         if (inpvars._tests[0][2] == 1) and (bools[2] is False):
            sprint("hard constraint test is negative!",tvars.NIBS+7,1)
@@ -204,7 +205,7 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         #------------------#
         sprint("optimization...",tvars.NIBS2+4)
         data = (loptLL,prefix1+str(vecA),inpvars,lzmat,zmatvals,"LL")
-        ofileOPT,statusOPT,dummy,vecB,zmatvals,zmatatoms = itf.execute(*data)
+        ofileOPT,statusOPT,dummy,vecB,zmatvals,zmatatoms,basic_opt = itf.execute(*data)
         nopt += 1
 
         # optimization was carried out --> save guess
@@ -243,14 +244,14 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         #- - - - - - - - - #
         # 2nd set of TESTS #
         #- - - - - - - - - #
-        bools = tfh.precheck_geom(lzmat,zmatvals,cmatrix,inpvars)
+        bools,extra = tfh.precheck_geom(lzmat,zmatvals,cmatrix,inpvars)
         if (inpvars._tests[1][0] == 1) and not bools[0]:
            sprint("connectivity test is negative: different connectivity!",tvars.NIBS+7,1)
            rw.add_domain("excl",vecA,vecB,-1)
            if inpvars._enantio: rw.add_domain("excl",vecA_enantio,vecB_enantio,-1)
            continue
         if not bools[1]:
-           sprint("torsion angle out of domain...",tvars.NIBS+7,1)
+           sprint("torsion angle out of domain (torsion%i)..."%(extra[1]+1),tvars.NIBS+7,1)
            rw.add_domain("excl",vecA,vecB,-1)
            if inpvars._enantio: rw.add_domain("excl",vecA_enantio,vecB_enantio,-1)
            continue
@@ -283,7 +284,7 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         #------------------#
         sprint("frequency calculation...",tvars.NIBS2+4)
         data = (lfrqLL,prefix2+str(vecA),inpvars,lzmat,zmatvals,"LL")
-        ofileFRQ,dummy,statusFRQ,vecB_frq,dummy,dummy = itf.execute(*data)
+        ofileFRQ,dummy,statusFRQ,vecB_frq,dummy,dummy,basic_frq = itf.execute(*data)
         nfrq += 1
 
         #------------------------------#
@@ -315,12 +316,14 @@ def search_conformers(inpvars,zmat,symbols,cmatrix,dcorr,lNH2):
         #============#
         if bool_conf:
            # create z-matrix file
-           dst = inpvars._dirll+prefix3+"%s.zmat"%str(vecB)
-           write_zmat(dst,lzmat, zmatvals)
-           # copy frq file
-           src = ofileFRQ
-           dst = inpvars._dirll+prefix3+"%s.log"%str(vecB)
-           if not os.path.exists(dst): copyfile(src, dst)
+           file1 = inpvars._dirll+prefix3+"%s.zmat"%str(vecB)
+           if not os.path.exists(file1): write_zmat(file1,lzmat, zmatvals)
+           # Create file with main info
+           file2 = inpvars._dirll+prefix3+"%s.gts"%str(vecB)
+           if not os.path.exists(file2): write_gtsfile(*tuple(list(basic_frq)+[file2]))
+           # create molden file
+           file3 = inpvars._dirll+prefix3+"%s.molden"%str(vecB)
+           if not os.path.exists(file3): rw.gts2molden(file2,file3)
            # update counter
            nsp += 1
         sprint()

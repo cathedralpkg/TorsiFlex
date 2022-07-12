@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -576,8 +576,10 @@ def correlate_amatrices(amatrix_t,amatrix_0,symbols_t,symbols_0,\
         # use symbols of layers
         dcorr,na_2  = assign_layers(dcorr,graph_0,graph_t,symbols_0,symbols_t)
         if na_2 == 0: break
+
         # only asked for connectivity
         if onlyconn: break
+
         # use pyramid with 4 different vertices
         dcorr,na_j = assign_pyramid(dcorr,graph_0,graph_t,symbols_0,symbols_t,xcc_0,xcc_t)
         if na_j == 0: break
@@ -600,12 +602,12 @@ def correlate_amatrices(amatrix_t,amatrix_0,symbols_t,symbols_0,\
         # update na_0
         na_0 = na_6
     # return dcorr
-    return dcorr
+    return dcorr, nforce
 #---------------------------------------------------#
 def equivalent_atoms_by_connectivity(xcc,symbols,fconnect=1.3):
     amatrix = np.matrix(intl.get_adjmatrix(xcc,symbols,fconnect,"int")[0])
     amatrix = np.matrix(intl.link_fragments(xcc,amatrix.tolist(),1)[0])
-    dcorr   = correlate_amatrices(amatrix,amatrix,symbols,symbols,onlyconn=True)
+    dcorr,nforce = correlate_amatrices(amatrix,amatrix,symbols,symbols,onlyconn=True)
     return dcorr
 #---------------------------------------------------#
 def correlate_xccs(xcc_t,symbols_t,xcc_0,symbols_0,fconnect=1.3,pp=False):
@@ -626,7 +628,7 @@ def correlate_xccs(xcc_t,symbols_t,xcc_0,symbols_0,fconnect=1.3,pp=False):
     amatrix_t = np.matrix(intl.link_fragments(xcc_t,amatrix_t.tolist(),1)[0])
 
     # correlate amatrices
-    dcorr = correlate_amatrices(amatrix_t,amatrix_0,symbols_t,symbols_0,xcc_t,xcc_0)
+    dcorr,nforce = correlate_amatrices(amatrix_t,amatrix_0,symbols_t,symbols_0,xcc_t,xcc_0)
 
     if pp:
        print("forced: %i"%nforce)

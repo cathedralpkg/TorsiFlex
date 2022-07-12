@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  inpvars            |
-| Last Update:  2021/11/22 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -72,27 +72,26 @@ class InpVars():
           self._keyhl        = None
           self._tmpll        = None
           self._tmphl        = None
-          self._dirll        = None
-          self._dirhl        = None
+          self._dirll        = "files_LL/"
+          self._dirhl        = "files_HL/"
           self._pcfile       = None
-          self._lowlevel     = "pm6"
-          self._highlevel    = "hf 3-21g"
+          self._lowlevel     = "HF    3-21G              "
+          self._highlevel    = "B3LYP 6-31G int=ultrafine"
           self._memll        = "1GB"
           self._memhl        = "1GB"
           # int/floats #
           self._nprocll      = 1
           self._nprochl      = 1
           self._ncycles      = 200
-          self._optmode      = 0
-          self._dist1d       = 15.0
+          self._optmode      = 1
+          self._dist1d       = 7
           self._cfactor      = 1.3
-          self._epsdeg       = 2.0
+          self._epsdeg       = 2
           self._charge       = 0
           self._multipl      = 1
           self._hlcutoff     = None
-          self._freqscalLL   = 1.0
-          self._freqscalHL   = 1.0
-          self._temp         = 298.15
+          self._freqscalLL   = 1.000
+          self._freqscalHL   = 1.000
           self._sigmamj      = 0.02 # max value for sigma(mj)
           # lists
           self._hconstr      = []
@@ -101,6 +100,7 @@ class InpVars():
           self._ifqrangeHL   = []
           self._temps        = []
           self._skipconn     = []
+          self._stoc         = []
           # dictionaries
           self._tic          = {} # now dict, later list
           self._tsigma       = {} # now dict, later list
@@ -126,27 +126,17 @@ class InpVars():
           try   : return self.string_vars()
           except: return ""
 
-      def write_default(self,filename,PROGNAME):
+      def write_default(self,filename,PROGNAME,torsions=None,rewrite=False):
           '''
           Generates input if it does not exist
             * returns 0 if input exists
             * return  1 if input was created
           '''
           # Does input file exist?
-          if os.path.exists(filename): return 0
-          # Name for tmp folders
-          username = getpass.getuser()
-          while True:
-              randname = tfh.random_name()
-              tmpll    = "/scratch/%s/LL_%s/"%(username,randname)
-              tmphl    = "/scratch/%s/HL_%s/"%(username,randname)
-              if os.path.exists(tmpll): continue
-              if os.path.exists(tmphl): continue
-              break
-          # any txt/xyz/zmat file?
+          if os.path.exists(filename) and not rewrite: return 0
+          if torsions is None: torsions = ["--"]
+          # any zmat file?
           files = [fname for fname in os.listdir(".") if \
-                   fname.lower().endswith(".txt") or \
-                   fname.lower().endswith(".xyz") or \
                    fname.lower().endswith(".zmat")]
           if len(files) == 1:
              zmatfile = files[0]
@@ -154,7 +144,29 @@ class InpVars():
               zmatfile = None
               for fname in files:
                   if fname.endswith(".zmat"): zmatfile = fname
-              if zmatfile is None: zmatfile = "zmat.txt"
+              if zmatfile is None: zmatfile = "zmfile.zmat"
+
+          # Name for tmp folders
+          mname    = ".".join(zmatfile.split(".")[:-1])
+          try   : username = getpass.getuser()
+          except: username = "user"
+          tmpll    = "/scratch/%s/LL_%s/"%(username,mname)
+          tmphl    = "/scratch/%s/HL_%s/"%(username,mname)
+          while True:
+              if not os.path.exists(tmpll): break
+              if not os.path.exists(tmphl): break
+              randname = tfh.random_name()
+              tmpll    = "/scratch/%s/LL_%s/"%(username,randname)
+              tmphl    = "/scratch/%s/HL_%s/"%(username,randname)
+
+          if self._enantio: senantio = "yes"
+          else            : senantio = "no "
+          if self._ts     : sts      = "yes"
+          else            : sts      = "no "
+          if self._fccards: sffcards = "yes"
+          else            : sffcards = "no "
+          stestsG = " ".join("%s"%val for val in self._tests[0])
+          stestsO = " ".join("%s"%val for val in self._tests[1])
 
           # Create input file
           string  = "# This is a %s input file\n"%(PROGNAME.split(".py")[0])
@@ -163,42 +175,61 @@ class InpVars():
           string += "#        System         #\n"
           string += "#-----------------------#\n"
           string += "zmatfile    %-11s # Z-matrix file\n"%zmatfile
-          string += "enantio     no          # yes if torsional enantioners, no otherwise\n"
-          string += "ts          no          # yes if transition state, no otherwise\n"
-          string += "cfactor     1.3         # controls the connectivity criterium\n"
+          string += "charge      %-3i         # charge of the system\n"%self._charge
+          string += "multipl     %-3i         # multiplicity of the system\n"%self._multipl
+          string += "enantio     %3s         # yes if torsional enantioners, no otherwise\n"%senantio
+          string += "ts          %3s         # yes if transition state, no otherwise\n"%sts
+          string += "cfactor     %.1f         # controls the connectivity criterium\n"%self._cfactor
           string += "#skipcon    (1,2)       # skips connectivity between pairs of atoms\n"
+          string += "\n"
+          string += "\n"
+          string += "#-----------------------#\n"
+          string += "#        Storage        #\n"
+          string += "#-----------------------#\n"
+          string += "dirll       %s   # folder to store LL conformers\n"%self._dirll
+          string += "dirhl       %s   # folder to store HL conformers\n"%self._dirhl
+          string += "tmpll       %s # folder for LL temporal files\n"%tmpll
+          string += "tmphl       %s # folder for HL temporal files\n"%tmphl
           string += "\n"
           string += "\n"
           string += "#-----------------------#\n"
           string += "#    Target torsions    #\n"
           string += "#-----------------------#\n"
-          string += "torsion1    --          # name of 1st target torsion in the Z-matrix file\n"
-          string += "#precond1   60 180 300  # precond angles for torsion1\n"
-          string += "#tdomain1   (0,360)     # domain for torsion1\n"
-          string += "#tsigma1    1           # symmetry number for torsion1\n"
+          for idx,torsion in enumerate(torsions):
+              ni = idx+1
+              string += "torsion%i   %-12s # name of target torsion number %i in the Z-matrix file\n"%(ni,torsion,ni)
+          string += "\n"
+          for ni in range(1,len(torsions)+1):
+              string += "precond%i   60 180 300   # precond angles for torsion%i\n"%(ni,ni)
+          string += "\n"
+          for ni in range(1,len(torsions)+1):
+              string += "tdomain%i   (0,360)      # domain for torsion%i\n"%(ni,ni)
+          string += "\n"
+          for ni in range(1,len(torsions)+1):
+              string += "tsigma%i    1            # symmetry number for torsion%i\n"%(ni,ni)
+          string += "\n"
           string += "#pcfile     precond.txt # file with precond. angles\n"
           string += "\n"
           string += "\n"
           string += "#-----------------------#\n"
           string += "#   Search  Procedure   #\n"
           string += "#-----------------------#\n"
-          string += "ncycles     200         # number of steps of stochastic algorithm\n"
+          string += "ncycles     %3i         # number of steps of stochastic algorithm\n"%self._ncycles
           string += "\n"
           string += "\n"
           string += "#-----------------------#\n"
           string += "#   HL reoptimization   #\n"
           string += "#-----------------------#\n"
           string += "#hlcutoff    5.0        # Gibbs energy cutoff (kcal/mol)\n"
-          string += "tempGibbs  298.15       # Temperature (K) for Gibbs free energy\n"
           string += "\n"
           string += "\n"
           string += "#-----------------------#\n"
           string += "#   Validation  tests   #\n"
           string += "#-----------------------#\n"
-          string += "testsG      1 1 1 1     # for Guess geom (Conn, Simil, Hard, Soft)\n"
-          string += "testsO      1 1 1 1     # for Opt   geom (Conn, Redun, Hard, Soft)\n"
-          string += "dist1D      15          # domain size about each point (degrees)\n"
-          string += "epsdeg      2           # max diff between two identical angles (degrees)\n"
+          string += "testsG      %s     # for Guess geom (Conn, Simil, Hard, Soft)\n"%stestsG
+          string += "testsO      %s     # for Opt   geom (Conn, Redun, Hard, Soft)\n"%stestsO
+          string += "dist1D      %i           # domain size about each point (degrees)\n"%self._dist1d
+          string += "epsdeg      %i           # max diff between two identical angles (degrees)\n"%self._epsdeg
           string += "#hconstr    ic domain   # hard constraint (see manual)\n"
           string += "#sconstr    ic domain   # soft constraint (see manual)\n"
           string += "#ifqrangeLL domain      # restricts LL imaginary-frequency interval\n"
@@ -208,16 +239,14 @@ class InpVars():
           string += "#-----------------------#\n"
           string += "# Gaussian calculations #\n"
           string += "#-----------------------#\n"
-          string += "optmode     1           # 0:opt(z-matrix) , 1:opt(modredundant)\n"
-          string += "fccards     no          # Use LL Hessian in HL opt (yes/no)\n"
-          string += "charge      0           # charge of the system\n"
-          string += "multipl     1           # multiplicity of the system\n"
-          string += "lowlevel    hf    3-21g # low-level of calculation\n"
-          string += "highlevel   b3lyp 6-31G # high-level of calculation\n"
-          string += "nprocll     1           # Number of threads (low-level)\n"
-          string += "memll       1GB         # dynamic memory (low-level)\n"
-          string += "nprochl     1           # Number of threads (high-level)\n"
-          string += "memhl       1GB         # dynamic memory (high-level)\n"
+          string += "optmode     %i           # 0:opt(z-matrix) , 1:opt(modredundant)\n"%self._optmode
+          string += "fccards     %3s         # Use LL Hessian in HL opt (yes/no)\n"%sffcards
+          string += "lowlevel    %s # low-level of calculation\n"%self._lowlevel
+          string += "highlevel   %s # high-level of calculation\n"%self._highlevel
+          string += "nprocll     %i           # Number of threads (low-level)\n"%self._nprocll
+          string += "memll       %s         # dynamic memory (low-level)\n"%self._memll
+          string += "nprochl     %i           # Number of threads (high-level)\n"%self._nprochl
+          string += "memhl       %s         # dynamic memory (high-level)\n"%self._memhl
       #   string += "# Energy keyword for Gaussian ouput files\n"
       #   string += "#keyll      hf\n"
       #   string += "#keyhl      hf\n"
@@ -226,23 +255,15 @@ class InpVars():
           string += "#-----------------------#\n"
           string += "#  Partition functions  #\n"
           string += "#-----------------------#\n"
-          string += "tempsPF     100   200   # temperatures (K) for part. functions\n"
-          string += "tempsPF     298.15      # temperatures (K) for part. functions\n"
-          string += "tempsPF     300   500   # temperatures (K) for part. functions\n"
-          string += "tempsPF     750  1000   # temperatures (K) for part. functions\n"
-          string += "tempsPF     2000 2500   # temperatures (K) for part. functions\n"
-          string += "freqscalLL  1.0         # freq. scaling factor (LL)\n"
-          string += "freqscalHL  1.0         # freq. scaling factor (HL)\n"
-          string += "sigmamj     0.02        # max value for sigma(Mj); >= 0.01\n"
-          string += "\n"
-          string += "\n"
-          string += "#-----------------------#\n"
-          string += "#        Storage        #\n"
-          string += "#-----------------------#\n"
-          string += "dirll       files_LL/   # folder to store LL conformers\n"
-          string += "dirhl       files_HL/   # folder to store HL conformers\n"
-          string += "tmpll       %s # folder for LL temporal files\n"%tmpll
-          string += "tmphl       %s # folder for HL temporal files\n"%tmphl
+          string += "temps     100.00 200.00 # temperatures (K) for part. functions\n"
+          string += "temps     298.15 300.00 # temperatures (K) for part. functions\n"
+          string += "temps     500.00 750.00 # temperatures (K) for part. functions\n"
+          string += "temps           1000.00 # temperatures (K) for part. functions\n"
+          string += "temps           2000.00 # temperatures (K) for part. functions\n"
+          string += "temps           2500.00 # temperatures (K) for part. functions\n"
+          string += "freqscalLL  %.3f       # freq. scaling factor (LL)\n"%self._freqscalLL
+          string += "freqscalHL  %.3f       # freq. scaling factor (HL)\n"%self._freqscalHL
+          string += "sigmamj     %.2f        # max value for sigma(Mj); >= 0.01\n"%self._sigmamj
           string += "\n"
           string += "\n"
           # write string to file
@@ -328,8 +349,6 @@ class InpVars():
           #-------------------#
           elif variable == "hlcutoff":
              self._hlcutoff = float(value)
-          elif variable == "tempgibbs":
-             self._temp  = float(value)
 
           #------------------#
           # Validation tests #
@@ -394,7 +413,7 @@ class InpVars():
           #-----------------#
           # Part. functions #
           #-----------------#
-          elif variable == "tempspf":
+          elif variable == "temps":
              self._temps += [float(val_i) for val_i in value.split()]
           elif variable == "freqscalll":
              self._freqscalLL = float(value)

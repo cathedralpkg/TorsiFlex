@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  optMSHO            |
-| Last Update:  2021/11/22 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -56,10 +56,11 @@ import modtorsiflex.tfhelper  as tfh
 import modtorsiflex.printing  as pp
 from   modtorsiflex.tfvars    import NIBS2, IBS2
 from   modtorsiflex.tfvars    import EPS_KCALMOL, DIREXCLUD
-from   modtorsiflex.tfvars    import MINGTXT, ENERGYSUMLL
+from   modtorsiflex.tfvars    import MINGTXT, ENERGYSUMLL, ALLCONFS
 #==================================================#
 
 
+REASONS  = "wrongconn,repeated,outofdomain,norestr,wimag"
 
 
 #==================================================#
@@ -92,12 +93,128 @@ def get_rotcons(lzmat,zmatvals,symbols):
     rotcons = [pc.H_SI/(Ii*8*np.pi**2)/1E9 for Ii in imoms]
     return rotcons
 #--------------------------------------------------#
-def classify_files(inpvars,cmatrix,case,dcorr):
-    if case == "LL":
+def check_if_same_energy(vec,gts,V0,V1,idx,data,inpvars,EXCLUDED,dcorr):
+    #-------------------------------------------#
+    # Select those conformers with same V0 & V1 #
+    #-------------------------------------------#
+    idx_same = []
+    for idx_j in range(idx-1,-1,-1):
+        vec_j,V0j,V1j,weightj,rotconsj,ifreqj,Qrvj,Gj,lzmatj,zmatvalsj,sfccardsj,gtsj = data[idx_j]
+        diffV0 = abs(V0j-V0)*pc.KCALMOL
+        diffV1 = abs(V1j-V1)*pc.KCALMOL
+        if diffV0 > EPS_KCALMOL: break
+        if diffV1 > EPS_KCALMOL: break
+        idx_same.append(idx_j)
+
+    #----------------#
+    # Compare angles #
+    #----------------#
+    same,enantio,VECj,GTSj = False,False,None,None
+    for idx_j in idx_same:
+        repeated = False
+        # Data of previous points
+        vec_j,V0j,V1j,weightj,rotconsj,ifreqj,Qrvj,Gj,lzmatj,zmatvalsj,sfccardsj,gtsj = data[idx_j]
+        # check if same point
+        if vec.is_same(vec_j,inpvars._epsdeg):
+           same,VECj,GTSj = True,vec_j,gtsj
+           break
+        # System presents torsional enantiomerism?
+        if not inpvars._enantio: continue
+        # Try with enantiomer vector
+        evec_j = tfh.enantiovec(lzmatj,zmatvalsj,dcorr,inpvars)
+        if vec.is_same(evec_j,inpvars._epsdeg):
+           enantio,VECj,GTSj = True,vec_j,gtsj
+           break
+
+    # Save if repeated
+    if same or enantio:
+       # if possible, keep the preconditiones one
+       if gts.startswith("prec.") and GTSj.startswith("stoc."): EXCLUDED["repeated"].append(GTSj)
+       else                                                   : EXCLUDED["repeated"].append(gts)
+    return EXCLUDED,(same,enantio,VECj)
+#--------------------------------------------------#
+def check_point(gts,lzmat,zmatvals,cmatrix,inpvars,ifreq,ifreqconstr,EXCLUDED):
+
+    #----------------#
+    # Carry on tests #
+    #----------------#
+    bools = tfh.precheck_geom(lzmat,zmatvals,cmatrix,inpvars)[0]
+    bool_imag = True
+    if ifreqconstr != []:
+       bool_imag = fncs.float_in_domain(fncs.afreq2cm(abs(ifreq)),ifreqconstr)
+
+    #-----------------------#
+    # If excluded, classify #
+    #-----------------------#
+    allok = False
+    if   (inpvars._tests[1][0] == 1) and (bools[0] is False): EXCLUDED["wrongconn"  ].append(gts)
+    elif (inpvars._tests[1][1] == 1) and (bools[1] is False): EXCLUDED["outofdomain"].append(gts)
+    elif (inpvars._tests[1][2] == 1) and (bools[2] is False): EXCLUDED["norestr"    ].append(gts)
+    elif (inpvars._tests[1][3] == 1) and (bools[3] is False): EXCLUDED["norestr"    ].append(gts)
+    elif not bool_imag                                      : EXCLUDED["wimag"      ].append(gts)
+    else                                                    : allok = True
+
+    # Return dictionary and boolean
+    return EXCLUDED, allok
+#--------------------------------------------------#
+def cleanup_conformers(data,inpvars,cmatrix,symbols,ifreqconstr,dcorr):
+
+    # Analyze point by point
+    EXCLUDED = {reason:[] for reason in REASONS.split(",")}
+
+    count_pre = 0
+    count_sto = 0
+
+    # Now, one by one
+    extra = {}
+    for idx,conftuple in enumerate(data):
+
+        vec,V0,V1,weight,rotcons,ifreq,Qrv,G,lzmat,zmatvals,fccards,gts = conftuple
+        # extra data
+        try   : rotcons = sorted(list(get_rotcons(lzmat,zmatvals,symbols)))
+        except: rotcons = None
+        # preconditioned or stochastic?
+        if gts.startswith("stoc"): count_sto  += weight
+        else                     : count_pre  += weight
+        # Check if it must be removed
+        EXCLUDED,allok = check_point(gts,lzmat,zmatvals,cmatrix,inpvars,ifreq,ifreqconstr,EXCLUDED)
+        # If all ok, then check if there are previous conformers with same energy
+        if allok:
+           EXCLUDED,extra_j = check_if_same_energy(vec,gts,V0,V1,idx,data,inpvars,EXCLUDED,dcorr)
+           extra[idx]       = extra_j
+
+    return EXCLUDED,extra, count_pre, count_sto
+#--------------------------------------------------#
+def relocate_excluded(folder,EXCLUDED):
+    nreloc  = 0
+    direxcl = folder+DIREXCLUD
+
+    n1,n2,n3,n4,n5 = [len(EXCLUDED[which]) for which in REASONS.split(",")]
+    if n1+n2+n3+n4+n5 > 0:
+       string  = "Conformers with problems (<--) will be moved to: %s\n"%direxcl
+       mkdir_recursive(direxcl)
+       for gts in [gts for which in REASONS.split(",") for gts in EXCLUDED[which]]:
+           # gts file
+           if not os.path.exists(folder+gts): continue
+           move(folder+gts,direxcl+gts)
+           nreloc += 1
+           # zmat & molden files
+           for ext in (".zmat",".molden"):
+               filename = gts.replace(".gts",ext)
+               if not os.path.exists(folder+filename): continue
+               move(folder+filename,direxcl+filename)
+       string += "Number of conformers moved: %i\n"%nreloc
+       string += ""
+       # repeat again all
+       for line in string.split("\n"): print(IBS2+line)
+    return nreloc
+#--------------------------------------------------#
+def classify_files(inpvars,cmatrix,dcorr,level="LL"):
+    if level == "LL":
        folder      = inpvars._dirll
        fscal       = inpvars._freqscalLL
        ifreqconstr = inpvars._ifqrangeLL
-    if case == "HL":
+    if level == "HL":
        folder      = inpvars._dirhl
        fscal       = inpvars._freqscalHL
        ifreqconstr = inpvars._ifqrangeHL
@@ -109,228 +226,54 @@ def classify_files(inpvars,cmatrix,case,dcorr):
     # print status of validation tests
     pp.print_tests(inpvars._tests,1)
     pp.print_ifreqconstr(ifreqconstr)
-
-    # Read logs
-    print(IBS2+"Reading log files inside '%s'..."%folder)
-    # has to be done in this way due to the yield in folder_data function
-    data      = [(ctuple,symbols) for ctuple,symbols in tgau.folder_data(folder,inpvars,fscal)]
-    print(IBS2+"Number of (frq) log files: %i\n"%len(data))
-    if len(data) == 0: return
-    symbols   = data[0][1]
-    dataconfs = [ctuple  for ctuple,symbols in data]
-    dataconfs.sort(key=lambda x:x[1])
-    del data
-    minG  = min([ctuple[3] for ctuple in dataconfs])
-    if case == "LL": rw.write_llenergies(dataconfs,inpvars._temp)
-       ##with open(MINGTXT,'w') as asdf: asdf.write("minG %.8f %.2f\n"%(minG,inpvars._temp))
-
-    if symbols is None: 
-       print(IBS2+"ERROR! No data inside %s\n"%folder)
-       raise exc.END
-
-    # Get reference point
-    vec0    = str(dataconfs[0][0])
-    Eref    = dataconfs[0][1]
-    print(IBS2+"Minimum total energy:")
-    print(IBS2+"  * point: %s"%str(vec0))
-    print(IBS2+"  * value: %.7f hartree"%Eref)
-    print("")
-    print(IBS2+"Relative energies (in kcal/mol)")
-    print(IBS2+"     E     : total energy")
-    print(IBS2+"     E+ZPE : total energy plus zero-point energy")
-    print(IBS2+"     G     : Gibbs free energy at %.2f K"%inpvars._temp)
-    print(IBS2+"     X     : Contribution to the total partition function at %.2f K"%inpvars._temp)
-    print("")
-    print(IBS2+"     frequencies scaled by: %.4f"%fscal)
-    print("")
-    if inpvars._ts:
-       print(IBS2+"Transition state imaginary frequency (ifreq) in cm^-1")
-       print("")
-
-    # get minimum energies
-    minV0 = min([conftuple[1] for conftuple in dataconfs])
-    minV1 = min([conftuple[2] for conftuple in dataconfs])
-    minG  = min([conftuple[3] for conftuple in dataconfs])
-
-    # Analyze point by point
-    wrongconn   = []
-    repeated    = []
-    outofdomain = []
-    norestr     = []
-    wimag       = []
-    iii = len(str(len(dataconfs)))
-    jjj = max(len(str(vec0)),len("angles"))
-    kkk = max(inpvars._ntorsions*2+2,len("conf"))
-    if inpvars._ts:
-       lengths = (iii,jjj,kkk,6,7,7,7,7,8)
-       head = ("","angles","conf","weight","E","E+ZPE","Gibbs","X","ifreq")
-    else:
-       lengths = (iii,jjj,kkk,6,7,7,7,7)
-       head = ("","angles","conf","weight","E","E+ZPE","Gibbs","X")
-    table_head = " "+" | ".join(fncs.fill_string(col,length) for col,length in zip(head,lengths))+" "
-    print(IBS2+"-"*len(table_head))
-    print(IBS2+table_head)
-    print(IBS2+"-"*len(table_head))
-    nomenclatures = []
-    QMSHO     = np.array([0.0 for temp in inpvars._temps])
-    QMSHO_pre = np.array([0.0 for temp in inpvars._temps])
-    QMSHO_sto = np.array([0.0 for temp in inpvars._temps])
-    count_pre = 0
-    count_sto = 0
-    # calculate quotient of Xj
-    xj_quo = 0.0
-    beta   = 1.0/pc.KB/inpvars._temp
-    for idx_j,conftuple_j in enumerate(dataconfs):
-        vec_j,V0_j,V1_j,Gj,weight_j,Qrv_j,ifreq_j,lzmat_j,zmatvals_j,log_j = conftuple_j
-        xj_quo += weight_j*np.exp(-(Gj-minG)*beta)
-    # Now, one by one
-    sumxj_pre = 0.0
-    sumxj_sto = 0.0
-    table2 = []
-    for idx1,conftuple1 in enumerate(dataconfs):
-        vec1,V0_1,V1_1,G1,weight1,Qrv1,ifreq1,lzmat1,zmatvals1,log1 = conftuple1
-        # extra data
-        try   : dipole  = read_dipole(folder+log1)
-        except: dipole  = None
-        try   : rotcons = sorted(list(get_rotcons(lzmat1,zmatvals1,symbols)))
-        except: rotcons = None
-        # Generate line
-        str_number = "%%%ii"%iii%(idx1+1)
-        # nomenclature
-        nomenclature = vec1.nomenclature()
-        idx = 1
-        while True:
-            idx += 1
-            if nomenclature in nomenclatures: nomenclature = vec1.nomenclature()+"_%i"%idx
-            else: break
-        nomenclatures.append(nomenclature)
-        # get relative energies
-        relV0 = (V0_1-minV0)*pc.KCALMOL
-        relV1 = (V1_1-minV1)*pc.KCALMOL
-        relG  = (G1  -minG )*pc.KCALMOL
-        xj    = weight1*np.exp(-(G1-minG)*beta)/xj_quo
-        datainline  = [fncs.fill_string(str_number,iii)]
-        datainline += [fncs.fill_string(str(vec1),jjj)]
-        datainline += [fncs.fill_string(nomenclature,kkk)]
-        datainline += ["%2i"%weight1]
-        datainline += ["%7.3f"%relV0,"%7.3f"%relV1,"%7.3f"%relG,"%7.5f"%xj]
-        if inpvars._ts:
-           try   : sifreq = "%6.1fi"%abs(fncs.afreq2cm(ifreq1))
-           except: sifreq = "   -   "
-           datainline += [sifreq]
-        table_line = " "+" | ".join(fncs.fill_string(col,length) \
-                         for col,length in zip(datainline,lengths))
-        table2.append( datainline[0:2]+[dipole,rotcons] )
-        # Add to QMSHO
-        add_to_qmsho = weight1*Qrv1*np.exp(-(V1_1-minV1)/pc.KB/inpvars._temps)
-        QMSHO += add_to_qmsho
-        # preconditioned or stochastic?
-        if log1.startswith("stoc"):
-            table_line += "   "
-            QMSHO_sto  += add_to_qmsho
-            count_sto  += weight1
-            sumxj_sto  += xj
-        else:
-            table_line += " * "
-            QMSHO_pre  += add_to_qmsho
-            count_pre  += weight1
-            sumxj_pre  += xj
-        # check imag freq
-        if ifreqconstr != []:
-           bool_imag  = fncs.float_in_domain(fncs.afreq2cm(abs(ifreq1)),ifreqconstr)
-        else: bool_imag = True
-
-        # check geom
-        bools = tfh.precheck_geom(lzmat1,zmatvals1,cmatrix,inpvars)
-        if   (inpvars._tests[1][0] == 1) and (bools[0] is False):
-           table_line += " <-- wrong connectivity"
-           wrongconn.append(log1)
-        elif (inpvars._tests[1][1] == 1) and (bools[1] is False):
-           table_line += " <-- invalid domain"
-           outofdomain.append(log1)
-        elif (inpvars._tests[1][2] == 1) and (bools[2] is False):
-           table_line += " <-- constraint not fulfilled"
-           norestr.append(log1)
-        elif (inpvars._tests[1][3] == 1) and (bools[3] is False):
-           table_line += " <-- constraint not fulfilled"
-           norestr.append(log1)
-        elif not bool_imag:
-           table_line += " <-- problem with imag. freq."
-           wimag.append(log1)
-        else:
-           same = False
-           enantiomers = False
-           # Append indices of point with same energy (within EPS_KCALMOL)
-           idx_same = []
-           for idx2 in range(idx1-1,-1,-1):
-               vec2,V0_2,V1_2,G2,weight2,Qrv2,ifreq2,lzmat2,zmatvals2,log2 = dataconfs[idx2]
-               diffE = abs(V0_2-V0_1)*pc.KCALMOL
-               if diffE > EPS_KCALMOL: break
-               idx_same.append(idx2)
-           # Check angles
-           for idx2 in idx_same:
-               vec2,V0_2,V1_2,G2,weight2,Qrv2,ifreq2,lzmat2,zmatvals2,log2 = dataconfs[idx2]
-               # check if same point or if enantiomer
-               if vec1.is_same(vec2,inpvars._epsdeg)   : same = True       ; break
-               if not inpvars._enantio                 : continue
-               vec2_enantio = tfh.enantiovec(lzmat2,zmatvals2,dcorr,inpvars)
-               if vec1.is_same(vec2_enantio,inpvars._epsdeg): enantiomers = True; break
-           # indicate ir
-           if same       : table_line += " <-- same as %s"%str(vec2)
-           if enantiomers: table_line += " <-- enantio. of %s"%str(vec2)
-           # save point to remove
-           if same or enantiomers:
-              # if possible, keep the preconditiones one
-              if log1.startswith("prec.") and log2.startswith("stoc."): repeated.append(log2)
-              else                                                    : repeated.append(log1)
-        print(IBS2+table_line)
-    print(IBS2+"-"*len(table_head))
-    print(IBS2+"   * From preconditioned search")
-    print("")
-    nconfs = count_pre+count_sto
-    print(IBS2+"   number of total          conformers: %3i"%nconfs)
-    print(IBS2+"   number of preconditioned conformers: %3i (%6.2f%%); sum(X) = %.4f"%(count_pre,100.0*count_pre/nconfs,sumxj_pre))
-    print(IBS2+"   number of stochastic     conformers: %3i (%6.2f%%); sum(X) = %.4f"%(count_sto,100.0*count_sto/nconfs,sumxj_sto))
-    print("")
     pp.print_torsiangleclass()
 
-    if len(repeated)+len(outofdomain)+len(norestr)+len(wrongconn)+len(wimag) > 0:
-       print(IBS2+"Number of wrong-connectivity   points: %i"%len(wrongconn))
-       print(IBS2+"Number of repeated             points: %i"%len(repeated))
-       print(IBS2+"Number of out-of-domain        points: %i"%len(outofdomain))
-       print(IBS2+"Number of restr-broken         points: %i"%len(norestr))
-       print(IBS2+"Number of wrong imaginary-freq points: %i"%len(wimag))
-       folder2 = folder+DIREXCLUD
-       print(IBS2+"  * these points will be moved to: %s"%folder2)
-       mkdir_recursive(folder2)
-       for log in repeated+outofdomain+norestr+wrongconn+wimag: move(folder+log,folder2+log)
-       print(IBS2+"  * moved!")
-       print("")
-       # repeat again all
-       del dataconfs
-       classify_files(inpvars,cmatrix,case,dcorr)
-    else:
-       # Print MSHO table
-       pp.print_mshotable(inpvars._temps,QMSHO,QMSHO_pre,QMSHO_sto,fscal)
-       # Create molden file
-       rw.write_molden_allconfs(dataconfs,Eref,symbols,folder)
-       # table 2
-       print(IBS2+"Total dipole moment (d.mom., debye) and rotational constants (Bi, GHz):")
-       print("")
-       lengths = (iii,jjj,7,7,7,7,7)
-       head = ("","angles","d.mom.","B1","B2","B3")
-       table_head = " "+" | ".join(fncs.fill_string(col,length) for col,length in zip(head,lengths))+" "
-       print(IBS2+"-"*len(table_head))
-       print(IBS2+table_head)
-       print(IBS2+"-"*len(table_head))
-       for idx,name,dipole,rotcons in table2:
-           if dipole is None: dipole = "   -   "
-           else             : dipole = "%7.3f"%dipole
-           if rotcons is None: rotcons = "   -    |    -    |    -    "
-           else : rotcons = "%7.3f | %7.3f | %7.3f "%tuple(rotcons)
-           print("        "+idx+" | "+name+" | "+dipole+" | "+rotcons)
-       print(IBS2+"-"*len(table_head))
-       print("")
+
+    #------------------------------------#
+    # Read data in folder and print info #
+    #------------------------------------#
+    nreloc = 1 # number of relocated files
+    ntries = 0 # number of attempts
+    while nreloc != 0:
+       if ntries != 0: print("\n"+IBS2+"TRYING AGAIN...\n\n")
+       # Read logs
+       print(IBS2+"Reading files inside '%s'..."%folder)
+       data, symbols = rw.folder_data(folder,inpvars,fscal)
+       print(IBS2+"Number of gts files: %i\n"%len(data))
+       if len(data) == 0: return
+
+       if symbols is None: 
+          print(IBS2+"ERROR! No data inside %s\n"%folder)
+          raise exc.END
+
+       # Get reference point
+       data.sort(key=lambda x:x[1])
+       vec0    = str(data[0][0])
+       Eref    = data[0][1]
+       # Clean-up conformers
+       EXCLUDED,extra,npre,nsto = cleanup_conformers(data,inpvars,cmatrix,symbols,ifreqconstr,dcorr)
+       pp.print_table_conformers(data,inpvars,fscal,EXCLUDED,extra,npre,nsto)
+       nreloc = relocate_excluded(folder,EXCLUDED)
+       # Just in case, break this loop if carried out 4 times
+       ntries += 1
+       if ntries == 4: break
+
+    #----------------------#
+    # Rotational constants #
+    #----------------------#
+    pp.print_table_rotcons(data)
+
+    #------------------------------------------#
+    # Partition functions for each temperature #
+    #------------------------------------------#
+    pp.print_partition_function(data,inpvars._temps,fscal,inpvars._enantio)
+
+    #--------------------#
+    # Create molden file #
+    #--------------------#
+    pp.sprint("Generating xyz file with all geometries: %s"%(folder+ALLCONFS),NIBS2)
+    rw.write_molden_allconfs(data,folder)
+    pp.sprint("Done!",NIBS2,1)
 #==================================================#
 
 

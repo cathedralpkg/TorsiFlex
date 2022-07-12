@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  tfrw               |
-| Last Update:  2021/11/22 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -43,10 +43,13 @@ files in TorsiFlex
 
 #==================================================#
 import os
+import numpy as np
+#--------------------------------------------------#
 import common.files              as ff
 import common.fncs               as fncs
 import common.physcons           as pc
 import common.internal           as intl
+from   common.gaussian           import get_fccards_string
 #--------------------------------------------------#
 from   common.Molecule   import Molecule
 from   common.pgs        import get_pgs
@@ -59,95 +62,13 @@ from   modtorsiflex.tpespoint import TorPESpoint
 
 
 #==================================================#
-def readfile_xyz(fname):
-    string = ""
-    zmat, symbols, masses = ff.read_xyz_zmat(fname)
-    xcc = intl.zmat2xcc(zmat[0],zmat[1])
-    # Print more information
-    ndummy = symbols.count("XX")
-    natoms = len(symbols)-ndummy
-    # without dummies
-    symbols_wo , xcc_wo    = fncs.clean_dummies(symbols,xcc=xcc)
-    symbols_wo , masses_wo = fncs.clean_dummies(symbols,masses=masses)
-    molecule = Molecule()
-    molecule.setvar(xcc=xcc_wo,symbols=symbols_wo,masses=masses_wo,ch=0,mtp=1)
-    molecule.prepare()
-    molecule.setup()
-    string += "Molecular formula     : %s\n"%molecule._mform
-    string += "Number of atoms       : %i\n"%natoms
-    string += "Number of dummy atoms : %i\n"%ndummy
-    string += "Vibrational d.o.f.    : %i\n"%molecule._nvdof
-    string += "\n"
-    # Cartesian Coordinates
-    string += "Cartesian coordinates (in Angstrom):\n"
-    sidx = "%%%si"%len(str(len(symbols)))
-    at_wo = -1
-    dwithout = {}
-    for at,symbol in enumerate(symbols):
-        xi,yi,zi = [value*pc.ANGSTROM for value in xcc[3*at : 3*at+3]]
-        mass     = masses[at]*pc.AMU
-        datainline = (sidx%(at+1),symbol,xi,yi,zi,mass)
-        if symbol != "XX": at_wo += 1; dwithout[at] = at_wo
-        else: dwithout[at] = None
-        string += "[%s]  %-2s  %+12.7f  %+12.7f  %+12.7f  (%7.3f amu)\n"%datainline
-    string += "\n"
-    return xcc,zmat,symbols,masses,(dwithout,molecule,natoms,ndummy),string
+# Convert imoms to rotcons (in GHz)
+IMOM2GHZ = pc.H_SI/(8*np.pi**2 * pc.KG*pc.METER**2)/1E9
 #==================================================#
-
 
 #==================================================#
 # Functions for reading/writing torsiflex files    #
 #==================================================#
-def read_pcfile(pcfile):
-    # read file
-    with open(pcfile,'r') as asdf: lines = asdf.readlines()
-    # Clean lines
-    lines = [line.split("#")[0].strip() for line in lines]
-    lines = [line for line in lines if line != ""]
-    # select torsions
-    sel_torsions = lines[0].replace("_"," ").lower().split()
-    # add name of torsion, just in case
-    sel_torsions = [t if t.startswith("torsion") else "torsion"+t for t in sel_torsions]
-    # for each line, get vector
-    for line in lines[1:]:
-        # replace "_" by " "
-        values = line.replace("_"," ").split()
-        # check dimension
-        if len(values) != len(sel_torsions):
-           exception = WrongDimension(Exception)
-           exception._ntor = len(sel_torsions)
-           exception._fline = lines[0]
-           exception._line = line
-           raise exception
-        # get values
-        values = {tor:int(float(val)%360) for tor,val in zip(sel_torsions,values) \
-                  if val !="-"}
-        yield values
-#--------------------------------------------------#
-def read_domains():
-    # Initialize domains
-    ddomains  = {domain:set([]) for domain in tvars.DOMAINS}
-    # does file exist? read it!
-    if os.path.exists(tvars.FDOMAINS):
-       with open(tvars.FDOMAINS,'r') as asdf:
-          lines = asdf.readlines()
-    else: lines = []
-    # Analyze lines
-    for line in lines:
-        # ignore comments and empty lines
-        line = line.split("#")[0].strip()
-        if line == "": continue
-        # Get data in line
-        domain, ipoint, fpoint, statusFRQ = line.split()
-        domain = domain.lower()
-        # save to dictionary
-        if ipoint == "-": ipoint = None
-        else            : ipoint = TorPESpoint(ipoint)
-        if fpoint == "-": fpoint = None
-        else            : fpoint = TorPESpoint(fpoint)
-        ddomains[domain].add( (ipoint,fpoint,int(statusFRQ)) )
-    # Return domains
-    return ddomains
 #--------------------------------------------------#
 def initialize_domains(ntorsions):
     if os.path.exists(tvars.FDOMAINS): return
@@ -180,46 +101,6 @@ def write_domains(ntorsions,ddomains):
         for ipoint,fpoint,statusFRQ in ddomains[domain]:
             add_domain(domain,ipoint,fpoint,statusFRQ)
 #--------------------------------------------------#
-def read_llenergies():
-    with open(tvars.ENERGYSUMLL,'r') as asdf: lines = asdf.readlines()
-    data = []
-    for line in lines:
-        line = line.split("#")[0].strip()
-        if line == "": continue
-        # temperature
-        if "tempGibbs" in line:
-           T = float(line.split()[1])
-           continue
-        #data
-        line = line.replace("|"," ")
-        idx, V0, G,svec = line.split()
-        idx = int(idx)
-        V0  = float(V0)
-        G   = float(G)
-        data.append( (idx,V0,G,svec) )
-    data.sort()
-    return data,T
-#--------------------------------------------------#
-def write_llenergies(dataconfs,temp):
-    ni = max(len(str(dataconfs[0][0])),len("point"))
-    string  = "# Gibbs free energy temperature\n"
-    string += "tempGibbs %9.3f K\n"%temp
-    string += "\n"
-    string += "              #--------------------------#\n"
-    string += "              #        kcal/mol          #\n"
-    string += "#----------------------------------------#\n"
-    string += "#  conformer  |     V0     |    Gibbs    #\n"
-    string += "#----------------------------------------#\n"
-    minV0 = min([conftuple_i[1] for conftuple_i in dataconfs])
-    minG  = min([conftuple_i[3]  for conftuple_i in dataconfs])
-    for idx_i,conftuple_i in enumerate(dataconfs):
-        vec_i,V0_i,V1_i,G_i = conftuple_i[0:4]
-        relV0_i = (V0_i-minV0)*pc.KCALMOL
-        relG_i  = (G_i -minG )*pc.KCALMOL
-        string += "   %-9i  |  %8.3f  |  %9.3f  | %s \n"%(idx_i+1,relV0_i,relG_i,vec_i)
-    string += "#----------------------------------------#\n"
-    with open(tvars.ENERGYSUMLL,'w') as asdf: asdf.write(string)
-#--------------------------------------------------#
 def read_llhlcorr():
     correlations = {}
     if not os.path.exists(tvars.LLHLCORRFILE): return correlations
@@ -243,18 +124,6 @@ def write_llhlcorr(correlations):
     string = "".join("%s  -->  %s\n"%(vecLL,vecHL) for (vecLL,vecHL) in correlations.items())
     with open(tvars.LLHLCORRFILE,'w') as asdf: asdf.write(string)
 #--------------------------------------------------#
-def string4xyzfile(xcc,symbols,info=""):
-    string  = "%i\n"%len(symbols)
-    string += info
-    if not info.endswith("\n"): string += "\n"
-    for at,symbol in enumerate(symbols):
-        x,y,z = fncs.xyz(xcc,at)
-        x *= pc.ANGSTROM
-        y *= pc.ANGSTROM
-        z *= pc.ANGSTROM
-        string += "%2s  %+12.8f  %+12.8f  %+12.8f\n"%(symbol,x,y,z)
-    return string
-#--------------------------------------------------#
 def create_xyz(xcc,symbols,inpvars):
     xyzfile = inpvars._zmatfile+".xyz"
     print(tvars.IBS+"   - xyz file: %s"%xyzfile)
@@ -268,25 +137,43 @@ def create_xyz(xcc,symbols,inpvars):
            string += "%2s  %+12.8f  %+12.8f  %+12.8f\n"%(symbol,x,y,z)
        with open(xyzfile,'w') as asdf: asdf.write(string)
 #--------------------------------------------------#
-def write_molden_allconfs(dataconfs,Eref,allsymbols,folder):
-       print(tvars.IBS2+"Generating xyz file with all geometries...")
-       print(tvars.IBS2+"    filename: %s"%(folder+tvars.ALLCONFS))
-       string = ""
-       for idx,conftuple in enumerate(dataconfs):
-           vec,V0,V1,G,weight,Qrv,ifreq,zmat,zmatvals,log = conftuple
-           # convert to xyz
-           V0_rel = (V0-Eref)*pc.KCALMOL
-           description = " * E = %+7.3f kcal/mol ; (%i) %s"%(V0_rel,idx+1,str(vec))
-           symbols   = [symbol for symbol in allsymbols if symbol.upper() not in ("X","XX")]
-           natoms    = len(symbols)
-           xcc = intl.zmat2xcc(zmat,zmatvals)
-           # remove dummy atoms (if there is any)
-           xcc = fncs.flatten_llist( [fncs.xyz(xcc,idx) for idx,symbol in enumerate(allsymbols) \
-                                      if symbol.upper() not in ("X","XX")])
-           # add to string
-           string += string4xyzfile(xcc,symbols,info=description)
-       with open(folder+tvars.ALLCONFS,'w') as asdf: asdf.write(string)
-       print("")
+def gts2molden(gtsfile,moldenfile):
+    molecule = Molecule()
+    molecule.set_from_gts(gtsfile)
+    molecule.setup()
+    molecule.genfile_molden(moldenfile)
+#--------------------------------------------------#
+def write_molden_allconfs(data,folder):
+    string = ""
+    # reference energy
+    minV0 = data[0][1]
+    # loop
+    for idx,data_i in enumerate(data):
+        vec,V0,V1,weight,rotcons,ifreq,Qrv,G,lzmat,zmatvals,fccards,gts = data_i
+        # convert to xyz
+        V0_rel  = (V0-minV0)*pc.KCALMOL
+        info    = " * E = %+7.3f kcal/mol ; (%i) %s"%(V0_rel,idx+1,str(vec))
+        # Symbols and xcc from z-matrix
+        allsymbols = [symbol for symbol,conns,keys in lzmat]
+        allxcc = intl.zmat2xcc(lzmat,zmatvals)
+        # Remove dummies
+        symbols = [symbol for symbol in allsymbols if symbol.upper() not in ("X","XX")]
+        xcc     = [fncs.xyz(allxcc,idx) for idx,symbol in enumerate(allsymbols) \
+                                   if symbol.upper() not in ("X","XX")]
+        xcc     = fncs.flatten_llist(xcc)
+        natoms  = len(symbols)
+        # add to string
+        string += "%i\n"%natoms
+        string += info
+        if not info.endswith("\n"): string += "\n"
+        for at,symbol in enumerate(symbols):
+            x,y,z = fncs.xyz(xcc,at)
+            x *= pc.ANGSTROM
+            y *= pc.ANGSTROM
+            z *= pc.ANGSTROM
+            string += "%2s  %+12.8f  %+12.8f  %+12.8f\n"%(symbol,x,y,z)
+    # Write file with all the conformers
+    with open(folder+tvars.ALLCONFS,'w') as asdf: asdf.write(string)
 #--------------------------------------------------#
 def write_mstorinp(geoms,symbols,mtp,freqscal,inpvars,dMj,nrics,folder,lCH3=[]):
     str_inp  = ""
@@ -396,8 +283,200 @@ def write_mstorinp(geoms,symbols,mtp,freqscal,inpvars,dMj,nrics,folder,lCH3=[]):
 #==================================================#
 
 
+#==================================================#
+def folder_data(folder,inpvars,fscal=1.0,verbose=True):
+    gtss = [fi for fi in os.listdir(folder) if fi.endswith(".gts")]
+    # First preconditioned, then stochastic!
+    gtss.sort()
+    # Mode for calculation of partition functions
+    if inpvars._ts: fmode = -1
+    else          : fmode =  0
+    # Calculate partition functions at different temperatures
+    data    = []
+    symbols = None
+    for gts in gtss:
+        name       = gts.split(".")[-2]
+        zmatfile   = gts.replace(".gts",".zmat")
+        moldenfile = gts.replace(".gts",".molden")
+        point      = TorPESpoint(name,inpvars._tlimit)
+        # Read zmat file
+        (lzmat,zmatvals,zmatatoms), symbols, masses = ff.read_zmat(folder+zmatfile)
+        # Molecule instance from gts
+        molecule = Molecule()
+        molecule.set_from_gts(folder+gts)
+        molecule.setvar(fscal=fscal)
+        molecule.prepare()
+        V0 = molecule._V0
+
+        # String fccards for gaussian
+        gcc = list(molecule._gcc)
+        Fcc = fncs.matrix2lowt(molecule._Fcc)
+        sfccards = get_fccards_string(gcc,Fcc)
+
+        # Initialize variables
+        weight   = None
+        rotcons  = None
+        ifreq    = None
+        Qrv      = None
+        gibbs    = None
+        V1       = None
+
+        # Calculate previous variables if asked for
+        if verbose:
+           molecule.setup()
+           if not os.path.exists(folder+moldenfile): molecule.genfile_molden(folder+moldenfile)
+           molecule.ana_freqs()
+           # Rotational constants (GHz)
+           try   : rotcons = IMOM2GHZ / np.array(molecule._imoms)
+           except: rotcons = None
+           # Calculate partition functions for the temperatures
+           qtot, V1, qis = molecule.calc_pfns(inpvars._temps,fmode=fmode)
+           qtr,qrot,qvib,qele = qis
+           Qrv = np.array(qrot) * np.array(qvib)
+           # remove rotsigma for Gibbs
+           gibbs = V1-pc.KB*np.array(inpvars._temps)*np.log(qtot*molecule._rotsigma)
+           # Weight of conformer
+           if inpvars._enantio and molecule._pgroup.lower() == "c1": weight = 2
+           else                                                    : weight = 1
+           # imaginary frequency
+           ccimag = molecule._ccimag
+           if   len(ccimag) == 0: ifreq = None
+           elif len(ccimag) == 1: ifreq = [ifreq for ifreq,ivec in list(molecule._ccimag)][0]
+           else                 : ifreq = None
+           V1 = molecule._ccV1
+        # data to save
+        data_i = (point,V0,V1,weight,rotcons,ifreq,Qrv,gibbs,lzmat,zmatvals,sfccards,gts)
+        data.append(data_i)
+    # Return data
+    return data,symbols
+#==================================================#
+
+
+
+def read_pcfile(pcfile):
+    # read file
+    with open(pcfile,'r') as asdf: lines = asdf.readlines()
+    # Clean lines
+    lines = [line.split("#")[0].strip() for line in lines]
+    lines = [line for line in lines if line != ""]
+    # select torsions
+    sel_torsions = lines[0].replace("_"," ").lower().split()
+    # add name of torsion, just in case
+    sel_torsions = [t if t.startswith("torsion") else "torsion"+t for t in sel_torsions]
+    # for each line, get vector
+    for line in lines[1:]:
+        # replace "_" by " "
+        values = line.replace("_"," ").split()
+        # check dimension
+        if len(values) != len(sel_torsions):
+           exception = WrongDimension(Exception)
+           exception._ntor = len(sel_torsions)
+           exception._fline = lines[0]
+           exception._line = line
+           raise exception
+        # get values
+        values = {tor:int(float(val)%360) for tor,val in zip(sel_torsions,values) \
+                  if val !="-"}
+        yield values
+#--------------------------------------------------#
+def read_domains():
+    # Initialize domains
+    ddomains  = {domain:set([]) for domain in tvars.DOMAINS}
+    # does file exist? read it!
+    if os.path.exists(tvars.FDOMAINS):
+       with open(tvars.FDOMAINS,'r') as asdf:
+          lines = asdf.readlines()
+    else: lines = []
+    # Analyze lines
+    for line in lines:
+        # ignore comments and empty lines
+        line = line.split("#")[0].strip()
+        if line == "": continue
+        # Get data in line
+        domain, ipoint, fpoint, statusFRQ = line.split()
+        domain = domain.lower()
+        # save to dictionary
+        if ipoint == "-": ipoint = None
+        else            : ipoint = TorPESpoint(ipoint)
+        if fpoint == "-": fpoint = None
+        else            : fpoint = TorPESpoint(fpoint)
+        ddomains[domain].add( (ipoint,fpoint,int(statusFRQ)) )
+    # Return domains
+    return ddomains
 
 
 
 
+#==================================================#
+# 01. Adjacency matrix                             #
+#==================================================#
+def read_adjacency(fugdict):
+    ''' reads file with connectivities '''
+    ugdict = {}
+    # read lines in file
+    with open(fugdict,'r') as asdf: lines =asdf.readlines()
+    # extract data
+    for line in lines:
+        line = line.split("#")[0].strip()
+        if line == "": continue
+        node, neighbors = line.split(":")
+        neighbors = neighbors.split()
+        ugdict[int(node)-1] = set([int(ni)-1 for ni in neighbors])
+    # return dictionary
+    return ugdict
+#--------------------------------------------------#
+def write_adjacency(fugdict,ugdict):
+    ''' writes file with connectivities '''
+    string = ""
+    # some operations for nice formatting
+    nn = fncs.num_of_digits(len(ugdict.keys()))
+    # add data to string
+    for node,neighbors in ugdict.items():
+        string += "%%-%ii : "%nn%(node+1)
+        string += " ".join(["%%%ii"%nn%(ni+1) for ni in neighbors])
+        string += "\n"
+    # write file
+    with open(fugdict,'w') as asdf: asdf.write(string)
+#==================================================#
+
+
+def read_llenergies():
+    with open(tvars.ENERGYSUMLL,'r') as asdf: lines = asdf.readlines()
+    data = []
+    for line in lines:
+        line = line.split("#")[0].strip()
+        if line == "": continue
+        # temperature
+        if "tempGibbs" in line:
+           T = float(line.split()[1])
+           continue
+        #data
+        line = line.replace("|"," ")
+        idx, V0, G,svec = line.split()
+        idx = int(idx)
+        V0  = float(V0)
+        G   = float(G)
+        data.append( (idx,V0,G,svec) )
+    data.sort()
+    return data,T
+#--------------------------------------------------#
+def write_llenergies(dataconfs,temp):
+    ni = max(len(str(dataconfs[0][0])),len("point"))
+    string  = "# Gibbs free energy temperature\n"
+    string += "tempGibbs %9.3f K\n"%temp
+    string += "\n"
+    string += "              #--------------------------#\n"
+    string += "              #        kcal/mol          #\n"
+    string += "#----------------------------------------#\n"
+    string += "#  conformer  |     V0     |    Gibbs    #\n"
+    string += "#----------------------------------------#\n"
+    minV0 = min([conftuple_i[1] for conftuple_i in dataconfs])
+    minG  = min([conftuple_i[3]  for conftuple_i in dataconfs])
+    for idx_i,conftuple_i in enumerate(dataconfs):
+        vec_i,V0_i,V1_i,G_i = conftuple_i[0:4]
+        relV0_i = (V0_i-minV0)*pc.KCALMOL
+        relG_i  = (G_i -minG )*pc.KCALMOL
+        string += "   %-9i  |  %8.3f  |  %9.3f  | %s \n"%(idx_i+1,relV0_i,relG_i,vec_i)
+    string += "#----------------------------------------#\n"
+    with open(tvars.ENERGYSUMLL,'w') as asdf: asdf.write(string)
 

@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  tfhelper           |
-| Last Update:  2021/11/22 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -51,7 +51,7 @@ import common.Exceptions as exc
 import common.gaussian   as gau
 import common.enantor    as enan
 from   common.physcons   import ANGSTROM
-from   common.files      import mkdir_recursive
+from   common.files      import mkdir_recursive, read_zmat
 #------------------------------------------#
 import modtorsiflex.printing    as pp
 from   modtorsiflex.tpespoint   import TorPESpoint
@@ -111,7 +111,7 @@ def adjmatrix_from_zmatrix(lzmat,zmatvals,cfactor):
     # symbols
     symbols = [pack[0] for pack in lzmat]
     # Get connection matrix
-    cmatrix = intl.get_adjmatrix(xcc,symbols,scale=cfactor,mode="bool")[0]
+    cmatrix = intl.get_adjmatrix(xcc,symbols,scale=cfactor,mode="int")[0]
     return cmatrix
 #--------------------------------------------------#
 def random_name(nn=5):
@@ -186,6 +186,13 @@ def vecinlimits(vec,tlimit):
         if vx > lx: return False
     return True
 #--------------------------------------------------#
+def is_proper_torsion(atoms,cmatrix):
+    at1,at2,at3,at4 = atoms
+    if not cmatrix[at1][at2]: return False
+    if not cmatrix[at2][at3]: return False
+    if not cmatrix[at3][at4]: return False
+    return True
+#--------------------------------------------------#
 def zmat2name(zmatvals,torsions):
     vec = zmat2vec(zmatvals,torsions)
     return vec2name(vec)
@@ -203,19 +210,19 @@ def xcc2vec(xcc,inpvars):
         phis.append( np.rad2deg(fncs.dihedral(*xs)) )
     return TorPESpoint(phis)
 #--------------------------------------------------#
-def folder_logs(folder):
+def folder_zmat(folder):
     if not os.path.exists(folder): return []
     # only those log files with freq calculations
-    logs = [log for log in os.listdir(folder) if log.endswith(".log")]
+    zmats = [zmat for zmat in os.listdir(folder) if zmat.endswith(".zmat")]
     # The vectors
-    return logs
+    return zmats
 #--------------------------------------------------#
 def folder_points(folder):
     if not os.path.exists(folder): return []
-    # only those log files with freq calculations
+    # Get vectors from gts files
     vecs = [fname.split(".")[1] for fname in os.listdir(folder) \
-            if fname.endswith(".log")]
-    # The vectors
+            if fname.endswith(".gts")]
+    # Return vectors
     return [TorPESpoint(point) for point in vecs]
 #--------------------------------------------------#
 def random_point(tdomain,tlimits):
@@ -223,10 +230,24 @@ def random_point(tdomain,tlimits):
     return TorPESpoint(vec,tlimits)
 #--------------------------------------------------#
 def yield_angles(inpvars):
-    # angles generated according pre-defined cases
+    #------------------------#
+    # Pre-conditioned angles #
+    #------------------------#
     if inpvars._prec:
-       for vec in inpvars.yield_precond(): yield TorPESpoint(vec)
-    # angles generated randomly
+       for vec in inpvars.yield_precond():
+           yield TorPESpoint(vec)
+    #------------------------#
+    #   Stochastic  angles   #
+    #------------------------#
+    elif len(inpvars._stoc) != 0:
+       for svec in inpvars._stoc:
+           # check dimension of input vector
+           exception = exc.StocSearchWrongDim
+           exception._dim = (len(svec.split("_")),len(inpvars._tlimit))
+           exception._vec = svec
+           if exception._dim[0] != exception._dim[1]: raise exception
+           # yield vector
+           yield TorPESpoint(svec,inpvars._tlimit)
     else:
        for cycle in range(inpvars._ncycles):
            yield random_point(inpvars._tdomain,inpvars._tlimit)
@@ -292,7 +313,7 @@ def in_explored_domain(vec,ddomains,inpvars):
     if inside: return True , closest
     return False, closest
 #--------------------------------------------------#
-def test_similarity_redundancy(point,inpvars,ddomains,svec2log={},dcorr={}):
+def test_similarity_redundancy(point,inpvars,ddomains,svec2zmat={},dcorr={}):
     '''
     returns:
        -1 --> point in domain
@@ -302,36 +323,35 @@ def test_similarity_redundancy(point,inpvars,ddomains,svec2log={},dcorr={}):
     # Check visited domain
     bool_indomain, closest = in_explored_domain(point,ddomains,inpvars)
     # (a) Point already evaluated
-    if bool_indomain and str(closest) == str(point): return -1, closest, svec2log,None
+    if bool_indomain and str(closest) == str(point): return -1, closest, svec2zmat,None
     # (b) Point in domain
-    elif bool_indomain: return 0, closest, svec2log,None
+    elif bool_indomain: return 0, closest, svec2zmat,None
     # (c) guess not in visited domain [check conformers]
     else:
 #      svectors  = folder_points(inpvars._dirll)
-       svec2log = get_logs_vecs(inpvars,dcorr,svec2log)
-       svectors = [TorPESpoint(svec) for svec in svec2log.keys()]
-       if len(svectors) == 0: return 1, None, svec2log,None
+       svec2zmat = get_zmat_vecs(inpvars,dcorr,svec2zmat)
+       svectors = [TorPESpoint(svec) for svec in svec2zmat.keys()]
+       if len(svectors) == 0: return 1, None, svec2zmat,None
        closest,distance = point.closest(svectors,mode=2)
-       return 1, closest, svec2log,distance
+       return 1, closest, svec2zmat,distance
 #--------------------------------------------------#
-def get_logs_vecs(inpvars,dcorr,svec2log={}):
+def get_zmat_vecs(inpvars,dcorr,svec2zmat={}):
     # conformers in folder
-    logs = folder_logs(inpvars._dirll)
-    if len(logs) == 0: return svec2log
+    zmats = folder_zmat(inpvars._dirll)
+    if len(zmats) == 0: return svec2zmat
     # find equivalent points
-    for log in logs:
-        svec = log.split(".")[1]
-        if svec in svec2log: continue
-        svec2log[svec ] = log
+    for zmat in zmats:
+        svec = zmat.split(".")[1]
+        if svec in svec2zmat: continue
+        svec2zmat[svec] = zmat
         if inpvars._enantio:
-           # (a) read log
-           zmatlines = gau.read_gaussian_log(inpvars._dirll+log)[10]
-           (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmatlines)
+           # (a) read zmat
+           lzmat,zmatvals,zmatatoms = read_zmat(inpvars._dirll+zmat)[0]
            # (b) enantiomer
            svec2 = str(enantiovec(lzmat,zmatvals,dcorr,inpvars))
-           svec2log[svec2] = log
+           svec2zmat[svec2] = zmat
     # return data
-    return svec2log
+    return svec2zmat
 #--------------------------------------------------#
 def test_connectivity(lzmat,zmatvals,cfactor,cmatrix,skipconn=[]):
     # create a copy of the reference matrix
@@ -340,8 +360,8 @@ def test_connectivity(lzmat,zmatvals,cfactor,cmatrix,skipconn=[]):
     cmatrix_current = adjmatrix_from_zmatrix(lzmat,zmatvals,cfactor)
     # skip pairs of atoms
     for at1,at2 in skipconn:
-        cmatrix_ref[at1][at2] = False; cmatrix_current[at1][at2] = False
-        cmatrix_ref[at2][at1] = False; cmatrix_current[at2][at1] = False
+        cmatrix_ref[at1][at2] = 0; cmatrix_current[at1][at2] = 0
+        cmatrix_ref[at2][at1] = 0; cmatrix_current[at2][at1] = 0
     # return if test is passed
     return cmatrix_ref == cmatrix_current
 #--------------------------------------------------#
@@ -418,11 +438,13 @@ def test_hsconstraints(lzmat,zmatvals,constr,which="hard"):
 #--------------------------------------------------#
 def precheck_geom(lzmat,zmatvals,cmatrix,inpvars):
     bools = [None,None,None,None]
+    extra = [None,None,None,None]
     # (a) connectivity test
     bools[0] = test_connectivity(lzmat,zmatvals,inpvars._cfactor,cmatrix,inpvars._skipconn)
     # (b) in domain test
     vec = TorPESpoint([zmatvals[ic] for ic in inpvars._tic])
-    bools[1] = vec.is_in_domain(inpvars._tdomain)
+    bools[1],torsionX = vec.is_in_domain(inpvars._tdomain)
+    extra[1] = torsionX
     # (c) Hard constraints
     try   : bools[2] = test_hsconstraints(lzmat,zmatvals,inpvars._hconstr,"hard")
     except: raise exc.ErrorHConstraint
@@ -430,6 +452,6 @@ def precheck_geom(lzmat,zmatvals,cmatrix,inpvars):
     try   : bools[3] = test_hsconstraints(lzmat,zmatvals,inpvars._sconstr,"soft")
     except: raise exc.ErrorSConstraint
     # return all comparisons
-    return bools
+    return bools,extra
 #==================================================#
 

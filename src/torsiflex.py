@@ -5,10 +5,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 *----------------------------------*
 | Program    :  torsiflex          |
-| Last Update:  2021/05/20 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 '''
@@ -43,36 +43,44 @@ OTHER DEALINGS IN THE SOFTWARE.
 import sys
 if sys.version_info.major < 3: exit("Python 3 required!!")
 #----------------------------------------------------------#
+import importlib.util
 import traceback
 import os
 import time
 import numpy as np
 #----------------------------------------------------------#
+import common.files              as ff
 import common.internal           as intl
 import common.fncs               as fncs
 import common.Exceptions         as exc
 import common.enantor            as enan
+from   common.physcons           import ANGSTROM, AMU
 from   common.pgs                import get_pgs
+from   common.criteria           import CONNECTSCAL
+import common.MolGraph           as mg
+from   common.smiles             import smiles_to_cc
+from   common.Molecule           import Molecule
+from   common.torsions           import torsion_of_cx3
 #----------------------------------------------------------#
 import modtorsiflex.printing     as pp
 import modtorsiflex.tfvars       as tvars
+import modtorsiflex.version      as version
 import modtorsiflex.tfgau        as itf
 import modtorsiflex.tfhelper     as tfh
 import modtorsiflex.tfrw         as rw
+from   modtorsiflex.options      import get_options_from_prompt
 from   modtorsiflex.inpvars      import InpVars
 from   modtorsiflex.printing     import sprint
+from   modtorsiflex.cc2zmat      import cartesian_to_zmatrix, xyz_to_zmatrix
 #----------------------------------------------------------#
 from   modtorsiflex.optSEARCH    import search_conformers
 from   modtorsiflex.optMSHO      import classify_files
 from   modtorsiflex.optHLOPT     import highlevel_reopt
 from   modtorsiflex.optREGEN     import regen_from_tmp
+from   modtorsiflex.optTORSIONS  import redefine_torsions
 from   modtorsiflex.optMSTOR     import gen_mstor
 #----------------------------------------------------------#
 
-OPTIONS__  = "help,version,inp,input,"
-OPTIONS__ += "prec,stoc,hlopt,"
-OPTIONS__ += "msho,mstor,"
-OPTIONS__ += "regen"
 
 #==================================================#
 def execute_code(function,args,string):
@@ -93,173 +101,21 @@ def print_error():
         line += " "*(maxlen-len(line))
         print("# "+line+" #")
     print(division)
-#==================================================#
-
-
-#==================================================#
-def get_options_from_prompt():
-    # Get user arguments (options)
-    args = sys.argv[1:]
-    #--------------------#
-    # --version / --help #
-    #--------------------#
-    # check if user asks for help
-    if "-h" in args or "--help" in args:
-        pp.print_welcome(tvars.PROGNAME)
-        sprint(pp.HSTRING)
-        raise exc.END
-    # check if user asks for version
-    if "-v" in args or "--version" in args:
-        sprint(tvars.PROGNAME.split(".py")[0]+" "+tvars.PROGVER)
-        raise exc.END
-
-    #--------------------#
-    # Re-order arguments #
-    #--------------------#
-    current = None
-    arguments = {}
-    for arg in args:
-        if arg.startswith("--"):
-           current = arg
-           arguments[current] = []
-        elif current is not None:
-           arguments[current].append(arg)
-
-    #-------------------------#
-    # Go argument by argument #
-    #-------------------------#
-    valid_args = ["--"+arg for arg in OPTIONS__.split(",")]
-    argbools   = {option:False for option in OPTIONS__.split(",")}
-    for argument,options in arguments.items():
-        # unknown option
-        if argument not in valid_args:
-           pp.print_unknown_option(arg,tvars.PROGNAME)
-           raise exc.END
-        # option was chosen
-        else: argbools[arg[2:]] = True
-        # ARGUMENT: --prec
-        if   argument == "--prec":
-            try:
-               if len(options) == 2: prec1,prec2 = options
-               else                : prec1,prec2 = 1,1
-               prec1,prec2 = int(prec1),int(prec2)
-               argbools["prec"] = (max(prec1,prec2,1),max(min(prec1,prec2),1))
-            except:
-               sprint("arguments for --prec must be integers!!")
-               raise exc.END
-        # ARGUMENT: --hlopt
-        elif argument == "--hlopt":
-            mode_hlopt  = "0"
-            lowerconformer = 0
-            upperconformer = float("inf")
-            try:
-               if "nocalc" in options:
-                   mode_hlopt = "1"
-                   options.remove("nocalc")
-               if len(options) == 2:
-                   lowerconformer,upperconformer = options
-                   lowerconformer = int(lowerconformer)
-                   upperconformer = int(upperconformer)
-               elif len(options) != 0: raise Exception
-               lowerconformer = min(lowerconformer,upperconformer)
-               upperconformer = max(lowerconformer,upperconformer)
-               argbools["hlopt"] = (mode_hlopt,lowerconformer,upperconformer)
-            except:
-               sprint("arguments for --hlopt must be 'nocalc' and/or two float numbers!!")
-               raise exc.END
-        # ARGUMENT: --msho
-        elif argument == "--msho":
-             mode_msho = "all"
-             if   "ll" in options: mode_msho = "ll"
-             elif "hl" in options: mode_msho = "hl"
-             elif len(options) != 0:
-                  sprint("argument for --msho can only be 'll' or 'hl'!!")
-                  raise exc.END
-             argbools["msho" ] = mode_msho
-        # ARGUMENT: --mstor
-        elif argument == "--mstor":
-             mode_mstor = "all"
-             if   "ll" in options: mode_mstor = "ll"
-             elif "hl" in options: mode_mstor = "hl"
-             elif len(options) != 0:
-                  sprint("argument for --mstor can only be 'll' or 'hl'!!")
-                  raise exc.END
-             argbools["mstor"] = mode_mstor
-
-    pp.print_welcome(tvars.PROGNAME)
-    pp.print_user_info()
-    return argbools
-#   # The valid options
-#   # bools
-#   argbools = {option:False for option in OPTIONS__.split(",")}
-#   # Are they known?
-#   current   = None
-#   prec1     = None
-#   prec2     = None
-#   mode_hlopt = "0"
-#   mode_msho  = "all"
-#   mode_mstor = "all"
-#   for idx,arg in enumerate(args):
-#       if arg in valid_args: current = arg
-#       # arguments for option --prec
-#       elif current == "--prec" and not arg.startswith("-"):
-#            try:
-#               if   prec1 is None: prec1 = int(arg)
-#               elif prec2 is None: prec2 = int(arg)
-#            except:
-#               sprint("arguments for --prec must be integers!!")
-#               raise exc.END
-#            continue
-#       # argument for option --hlopt
-#       elif current == "--hlopt" and not arg.startswith("-"):
-#            if   arg == "nocalc": mode_hlopt = "1"; continue
-#            else: sprint("argument for --hlopt can only be 'nocalc'!!"); raise exc.END
-#       # argument for option --msho
-#       elif current == "--msho" and not arg.startswith("-"):
-#            if   arg == "ll": mode_msho = "ll"; continue
-#            elif arg == "hl": mode_msho = "hl"; continue
-#            else: sprint("argument for --msho can only be 'll' ot 'hl'!!"); raise exc.END
-#       # argument for option --mstor
-#       elif current == "--mstor" and not arg.startswith("-"):
-#            if   arg == "ll": mode_mstor = "ll"; continue
-#            elif arg == "hl": mode_mstor = "hl"; continue
-#            else: sprint("argument for --mstor can only be 'll' ot 'hl'!!"); raise exc.END
-
-#       if not arg.startswith(""): continue
-#       elif arg not in valid_args:
-#            pp.print_unknown_option(arg,tvars.PROGNAME)
-#            raise exc.END
-#       argbools[arg[2:]] = True
-
-#   # value for prec
-#   if prec1 is None: prec1 = 1
-#   if prec2 is None: prec2 = 1
-#   if argbools["prec"]: argbools["prec"] = (max(prec1,prec2,1),max(min(prec1,prec2),1))
-#   # value for hlopt, msho and mstor
-#   if argbools["hlopt"] is not False: argbools["hlopt"] = mode_hlopt
-#   if argbools["msho" ] is not False: argbools["msho" ] = mode_msho
-#   if argbools["mstor"] is not False: argbools["mstor"] = mode_mstor
-#   pp.print_welcome(tvars.PROGNAME)
-#   pp.print_user_info()
-#   return argbools
 #--------------------------------------------------#
-def deal_with_input(case="create"):
-    # initialize InpVars object
-    inpvars = InpVars()
-    # act according case
-    if case == "create":
-       status  = inpvars.write_default(tvars.IFILE,tvars.PROGNAME)
-       if status == 1: pp.print_inpcreation(tvars.IFILE)
-       if status == 0: pp.print_found(tvars.IFILE)
-       # Generate Gaussian Templates
-       num_files_generated  = itf.generate_templates()
-       pp.print_msgGauTempl(num_files_generated,tvars.DIRTEMPL)
-    elif case == "read":
-       if os.path.exists(tvars.IFILE): pp.print_found(tvars.IFILE)
-       else: pp.print_notfound(tvars.IFILE); raise exc.END
-       inpvars.read_input(tvars.IFILE)
-    # return InpVars
-    return inpvars
+def can_smiles_be_used(smiles):
+    if smiles is None: return False
+    # is rdkit is available??
+    answer = True
+    pkgs   = ["rdkit","rdkit.Chem"]
+    for pkg in pkgs:
+        try   : spec = importlib.util.find_spec(pkg)
+        except: spec = None
+        if spec is None:
+           pp.print_not_installed(pkg)
+           answer = False
+    return answer
+#==================================================#
+
 #--------------------------------------------------#
 def detect_ch3(cmatrix,symbols,inpvars):
     lCH3 = []
@@ -313,6 +169,124 @@ def detect_nh2(cmatrix,symbols,lzmat,zmatvals,inpvars):
                enantio[X] = -HNRH_value
             else: continue
     return lNH2
+
+#==================================================#
+def torsions_from_zmatfile(zmatfile):
+    pp.print_reading_file(zmatfile)
+    # read zmatrix
+    (lzmat,zmatvals,zmatatoms), symbols, masses = ff.read_zmat(zmatfile)
+    # Cartesian coordinates
+    xcc = intl.zmat2xcc(lzmat,zmatvals)
+    # Molecular Graph
+    cmatrix = intl.get_adjmatrix(xcc,symbols,scale=CONNECTSCAL,mode="bool")[0]
+    #cmatrix = intl.link_fragments(xcc,cmatrix,nfrags=1)[0]
+    # Check torsions
+    torsions = []
+    for ic,atoms in zmatatoms.items():
+        if len(atoms) != 4: continue
+        if tfh.is_proper_torsion(atoms,cmatrix): torsions.append(ic)
+    # Exclude according to name
+    torsions = [torsion for torsion in torsions if not torsion.startswith("itor")]
+    torsions = [torsion for torsion in torsions if not torsion.startswith("etor")]
+    # Exclude CX3 torsions
+    cx3 = [torsion for torsion in torsions if torsion_of_cx3(zmatatoms[torsion],symbols,cmatrix)]
+    torsions = [torsion for torsion in torsions if torsion not in cx3]
+    # Print info
+    pp.print_torsions(torsions,cx3,zmatatoms,symbols)
+    # Return
+    return torsions,cx3
+#--------------------------------------------------#
+def readfile_xyz(fname):
+    string = ""
+    zmat, symbols, masses = ff.read_zmat(fname)
+    xcc = intl.zmat2xcc(zmat[0],zmat[1])
+    # Print more information
+    ndummy = symbols.count("XX")
+    natoms = len(symbols)-ndummy
+    # without dummies
+    symbols_wo , xcc_wo    = fncs.clean_dummies(symbols,xcc=xcc)
+    symbols_wo , masses_wo = fncs.clean_dummies(symbols,masses=masses)
+    molecule = Molecule()
+    molecule.setvar(xcc=xcc_wo,symbols=symbols_wo,masses=masses_wo,ch=0,mtp=1)
+    molecule.prepare()
+    molecule.setup()
+    string += "Molecular formula     : %s\n"%molecule._mform
+    string += "Number of atoms       : %i\n"%natoms
+    string += "Number of dummy atoms : %i\n"%ndummy
+    string += "Vibrational d.o.f.    : %i\n"%molecule._nvdof
+    string += "\n"
+    # Cartesian Coordinates
+    string += "Cartesian coordinates (generated from Z-matrix; in Angstrom):\n"
+    sidx = "%%%si"%len(str(len(symbols)))
+    at_wo = -1
+    dwithout = {}
+    for at,symbol in enumerate(symbols):
+        xi,yi,zi = [value*ANGSTROM for value in xcc[3*at : 3*at+3]]
+        mass     = masses[at]*AMU
+        datainline = (sidx%(at+1),symbol,xi,yi,zi,mass)
+        if symbol != "XX": at_wo += 1; dwithout[at] = at_wo
+        else: dwithout[at] = None
+        string += "[%s]  %-2s  %+12.7f  %+12.7f  %+12.7f  (%7.3f amu)\n"%datainline
+    string += "\n"
+    return xcc,zmat,symbols,masses,(dwithout,molecule,natoms,ndummy),string
+#--------------------------------------------------#
+def ask_for_enantio(enantio):
+    '''Ask for torsional enantiomerism'''
+    pp.print_question_enantio(enantio)
+    answer  = input(tvars.NIBS*" "+">> ").strip().lower()
+    pp.sprint("")
+    return answer in ["y","ye","yes"]
+#--------------------------------------------------#
+def ask_for_ts(ts):
+    pp.print_question_ts(ts)
+    answer  = input(tvars.NIBS*" "+">> ").strip().lower()
+    pp.sprint("")
+    return answer == "1"
+#--------------------------------------------------#
+def ask_for_ch_mtp(ch,mtp):
+    # ask for charge
+    default_charge  = 0
+    pp.print_question_ch(ch)
+    ch  = input(tvars.NIBS*" "+">> ").strip().lower().replace(","," ")
+    pp.sprint("")
+    if ch != "": 
+       try   : ch = int(ch)
+       except: ch = default_charge
+    else     : ch = default_charge
+    # ask for multiplicity
+    default_multipl = 1
+    pp.print_question_mtp(mtp)
+    mtp = input(tvars.NIBS*" "+">> ").strip().lower().replace(","," ")
+    pp.sprint("")
+    if mtp != "": 
+       try   : mtp = int(mtp)
+       except: mtp = default_multipl
+    else     : mtp = default_multipl
+    # return data
+    return ch,mtp
+#--------------------------------------------------#
+def create_input():
+    # initialize InpVars object
+    inpvars = InpVars()
+    # write default values
+    status  = inpvars.write_default(tvars.IFILE,version.PROGNAME)
+    if status == 1: pp.print_inpcreation(tvars.IFILE)
+    if status == 0: pp.print_found(tvars.IFILE)
+    # Generate Gaussian Templates
+    num_files_generated  = itf.generate_templates()
+    pp.print_msgGauTempl(num_files_generated,tvars.DIRTEMPL)
+    return inpvars
+#--------------------------------------------------#
+def read_input():
+    if not os.path.exists(tvars.IFILE):
+       pp.print_notfound(tvars.IFILE)
+       raise exc.END
+    pp.print_found(tvars.IFILE)
+    # initialize InpVars object
+    inpvars = InpVars()
+    # Read input file
+    inpvars.read_input(tvars.IFILE)
+    return inpvars
 #--------------------------------------------------#
 def lonepair(xcc,lNH2):
     lps = {}
@@ -327,32 +301,46 @@ def zmat_preparation(inpvars):
     # Read zmat file
     pp.print_found(inpvars._zmatfile)
     try:
-        xcc,zmat,symbols,masses,other,string = rw.readfile_xyz(inpvars._zmatfile)
+        xcc,zmat,symbols,masses,other,string = readfile_xyz(inpvars._zmatfile)
         dwithout,molecule,natoms,ndummy = other
         for line in string.split("\n"): print("       "+line)
     except:
         pp.print_sthwrong(inpvars._zmatfile)
         raise Exception
 
-    # Get connectivity matrix
-    sprint("   * calculating adjacency (connection) matrix...",tvars.NIBS)
-    sprint("     - connectivity scale factor: %.3f"%inpvars._cfactor,tvars.NIBS)
-    cmatrix,dmatrix,nbonds = intl.get_adjmatrix(xcc,symbols,scale=inpvars._cfactor,mode="bool")
-    fragments = list(intl.get_fragments_from_adjmatrix(cmatrix))
-    sprint("     - number of bonds: %i"%nbonds,tvars.NIBS)
+    # Connectivity matrix
+    sprint("   * Adjacency (connection) matrix",tvars.NIBS,1)
+    fugdict = inpvars._zmatfile[:-5]+".conn"
+    mgraph  = mg.MolGraph(xcc, symbols, cscal=inpvars._cfactor)
+    if os.path.exists(fugdict):
+       sprint("     - reading connectivity file: %s"%fugdict,tvars.NIBS,1)
+       ugdict = rw.read_adjacency(fugdict)
+       mgraph.set_from_alist(ugdict)
+       cmatrix = mgraph.get_amatrix()
+    else:
+       sprint("     - connectivity scale factor: %.3f"%inpvars._cfactor,tvars.NIBS)
+       sprint("     - writing connectivity file: %s"%fugdict,tvars.NIBS,1)
+       mgraph.calculate_connectivity(link_fragments=False)
+       ugdict = mgraph._ugdict.copy()
+       rw.write_adjacency(fugdict,ugdict)
+       cmatrix = np.asarray(mgraph._cmatrix)
+
     # print bonds
-    nrows, ncols = dmatrix.shape
+    nrows, ncols = len(cmatrix),len(cmatrix)
     bonds = []
     for idx1 in range(nrows):
         for idx2 in range(idx1+1,ncols):
             if not cmatrix[idx1][idx2]: continue
             bonds.append("%s%i-%s%i"%(symbols[idx1],idx1+1,symbols[idx2],idx2+1))
+    sprint("     - number of bonds: %i"%len(bonds),tvars.NIBS)
     ml = max([len(bond) for bond in bonds])
     for idx in range(0,len(bonds),5):
         line = "  ".join(["%%-%is"%ml%bond for bond in bonds[idx:idx+5]])
         sprint(line,tvars.NIBS+7)
     sprint()
+
     # fragments
+    fragments = list(intl.get_fragments_from_adjmatrix(cmatrix))
     sprint("     - number of fragments: %i"%len(fragments),tvars.NIBS)
     for count,fragment in enumerate(fragments):
         frag_mformu = fncs.get_molformula([symbols[idx] for idx in fragment])
@@ -366,16 +354,29 @@ def zmat_preparation(inpvars):
            sprint("       (%s%i,%s%i)"%(symbols[at1],at1+1,symbols[at2],at2+1),tvars.NIBS)
        sprint()
 
-    # Get atoms of target torsions
-    sprint("   * identifying target torsions in z-matrix...",tvars.NIBS)
     lzmat, zmatvals, zmatatoms = zmat
+
+    # Get atoms of target torsions
+    sprint("   * Available torsions:",tvars.NIBS)
+    for ic,atoms in zmatatoms.items():
+        if len(atoms) != 4: continue
+        if not intl.isproper(atoms[0],atoms[1],atoms[2],atoms[3],cmatrix=cmatrix): continue
+        storsion = "-".join([symbols[atom]+"%i"%(atom+1) for atom in atoms])
+        if torsion_of_cx3(atoms,symbols,cmatrix):
+           sprint("  %s --> %s  [CX3 rotation]"%(ic,storsion),tvars.NIBS+3)
+        else:
+           sprint("  %s --> %s"%(ic,storsion),tvars.NIBS+3)
+    sprint()
+
+    # Get atoms of target torsions
+    sprint("   * selected torsions:",tvars.NIBS)
     for X,ic in zip(inpvars._ttorsions,inpvars._tic):
         if ic not in zmatatoms.keys():
             sprint("   ERROR: Unable to find '%s' in z-matrix..."%ic,tvars.NIBS)
             raise Exception
         inpvars._tatoms[X] = list(zmatatoms[ic])
         storsion = "-".join([symbols[atom]+"%i"%(atom+1) for atom in inpvars._tatoms[X]])
-        sprint("  torsion%s (%s): %s"%(X,ic,storsion),tvars.NIBS+3)
+        sprint("  torsion%s (%s) --> %s"%(X,ic,storsion),tvars.NIBS+3)
     sprint()
 
     # Check lists and dicts related to torsions
@@ -423,43 +424,21 @@ def zmat_preparation(inpvars):
         sprint()
 
     return inpvars,zmat,symbols,masses,cmatrix,lCH3,lNH2,ndummy
+#--------------------------------------------------#
+def check_optmode(inpvars,ndummy):
+    if ndummy != 0 and inpvars._optmode != 0:
+       sprint("WARNING! Dummy atoms detected! Keyword 'optmode' will be set to 0!!",tvars.NIBS,1)
+       inpvars._optmode = 0
+    return inpvars
 #==================================================#
 
 
 
-
-
-
-
-
 #==================================================#
-def main():
-
-    # Presentation and arguments
-    argsbools = get_options_from_prompt()
-
-    num_options = len([argsbools[option] for option in OPTIONS__.split(",") \
-                                    if argsbools[option] is not False])
-
-    # No options selected & no input- print info
-    if num_options == 0 and not os.path.exists(tvars.IFILE):
-       pp.print_notfound(tvars.IFILE)
-       sprint("No options were given! Use --help for more information",tvars.NIBS,1)
-       raise exc.END
-
-    # Input & Templates creation
-    if argsbools["inp"] or argsbools["input"]:
-       inpvars = deal_with_input(case="create")
-       raise exc.END
-    else:
-       try   : inpvars = deal_with_input(case="read")
-       except: raise exc.END
-
-    # No options selected & no zmatrix - print info
-    if num_options == 0 and not os.path.exists(inpvars._zmatfile):
-       pp.print_notfound(inpvars._zmatfile)
-       sprint("No options were given! Use --help for more information",tvars.NIBS,1)
-       raise exc.END
+def prepare_system():
+    # Read input file
+    inpvars = read_input()
+    inpvars.prepare_variables()
 
     # zmat file exists?
     if not os.path.exists(inpvars._zmatfile):
@@ -467,14 +446,13 @@ def main():
        raise exc.END
 
     # Read zmat, check variables, generate templates and update current variables
-    inpvars.prepare_variables()
     if len(inpvars._ttorsions) == 0:
        sprint("No torsions selected in input file!",tvars.NIBS)
-       if num_options == 0:
+       if len(options) == 0:
           sprint("No options were given! Use --help for more information",tvars.NIBS,1)
        raise exc.END
-    inpvars,zmat,symbols,masses,cmatrix,lCH3,lNH2,ndummy = zmat_preparation(inpvars)
 
+    inpvars,zmat,symbols,masses,cmatrix,lCH3,lNH2,ndummy = zmat_preparation(inpvars)
 
     # Enantiomers? Correlate numbering
     dcorr = None
@@ -510,79 +488,199 @@ def main():
           sprint("    something went wrong... enantio deactivated!",tvars.NIBS2,1)
           inpvars._enantio = False
 
-    # Check opt mode
-    if ndummy != 0 and inpvars._optmode != 0:
-       sprint("WARNING! Dummy atoms detected! Keyword 'optmode' will be set to 0!!",tvars.NIBS,1)
-       inpvars._optmode = 0
-
     # dealing with TS?
     if not inpvars._ts:
        inpvars._ifqrangeLL = []
        inpvars._ifqrangeHL = []
 
+    return inpvars,zmat,symbols,masses,cmatrix,lCH3,lNH2,ndummy,dcorr
+#==================================================#
 
-    #=========================#
-    # Act according option(s) #
-    #=========================#
-    # No options selected - print info
-    if num_options == 0:
-       sprint("",tvars.NIBS)
-       sprint("No options were given! Use --help for more information",tvars.NIBS,1)
+
+
+#==================================================#
+def option_smiles(smiles,zmatfile):
+    fugdict = zmatfile[:-4]+".conn"
+    # Print info
+    pp.print_smiles_geomfile(smiles,zmatfile)
+    # Deal with smiles
+    if can_smiles_be_used(smiles):
+       if os.path.exists(zmatfile):
+          pp.print_file_exists(zmatfile,"Warning")
+          pp.print_no_smiles()
+       else:
+          pp.print_converting_smiles()
+          # smiles --> zmat
+          xcc, symbols = smiles_to_cc(smiles)
+          cartesian_to_zmatrix(xcc,symbols,fugdict,zmatfile)
+          pp.print_smiles_done()
+    else:
+       pp.print_no_smiles()
+#--------------------------------------------------#
+def option_cartesian(fxyz,fzmat):
+    # Assert existence of files
+    if not os.path.exists(fxyz) : pp.print_filenotfound(fxyz,tvars.NIBS,1) ; return
+    if     os.path.exists(fzmat): pp.print_file_exists(fzmat,"Warning"   ) ; return
+    # Convert
+    pp.print_cartesian(fxyz,fzmat)
+    xyz_to_zmatrix(fxyz,fzmat)
+#--------------------------------------------------#
+def option_input(zmatfile):
+
+    # Read file (if exists)
+    if not zmatfile.endswith(".zmat"):
+       pp.print_geomfile_ext()
        raise exc.END
 
-    #--------------------------#
-    # LL SEARCH (opt + search) #
-    #--------------------------#
-    if argsbools["prec" ] is not False or argsbools["stoc"]:
-        # Preconditioned search?
-        inpvars._prec = argsbools["prec"]
+    #-----------------------------#
+    # Create TorsiFlex input file #
+    #-----------------------------#
+    create = True
+    if os.path.exists(tvars.IFILE):
+       pp.print_file_exists(tvars.IFILE,"WARNING")
+       answer = input(tvars.NIBS*" "+"re-write file [Y/n]? ").strip().lower()
+       print("")
+       if answer in ["y","yes",""]: create = True
+       else                       : create = False
 
-        try: 
-            args = (inpvars,zmat,symbols,cmatrix,dcorr,lNH2)
-            execute_code(search_conformers,args,"Low-Level search")
-        except exc.WrongDimension as exception:
-            sprint("ERROR! Wrong dimension in file '%s'!"%inpvars._pcfile,tvars.NIBS2)
-            sprint("First line of file contains %i torsion(s)!"%exception._ntor,tvars.NIBS2+7)
-            sprint("--> %s "%exception._fline,tvars.NIBS2+7)
-            sprint("Line which causes this error:",tvars.NIBS2+7)
-            sprint("--> %s "%exception._line,tvars.NIBS2+7)
-            sprint()
-            raise exc.END
-        except exc.UnableGenRandAng as exception:
-             sprint("ERROR! Unable to generate valid random angle!",tvars.NIBS2)
-             if len(exception._domain) == 0:
-                sprint("Empty domain for one of the torsions!",tvars.NIBS2+7)
-             else:
-                the_domain = "U".join(["(%.0f,%.0f)"%(p1,p2) for p1,p2 in exception._domain])
-                sprint("Domain for torsion: %s"%the_domain,tvars.NIBS2+7)
-             sprint()
-             raise exc.END
-        except exc.ErrorHConstraint:
-             sprint("ERROR! Problem(s) when checking hard constraint(s)!\n",tvars.NIBS2)
-             raise exc.END
-        except exc.ErrorSConstraint:
-             sprint("ERROR! Problem(s) when checking soft constraint(s)!\n",tvars.NIBS2)
-             raise exc.END
+    if create:
+       inpvars = InpVars()
+       #- - - - - - - - - - - - - - - - - - -#
+       # Ask for some info to complete input #
+       #- - - - - - - - - - - - - - - - - - -#
+       pp.print_question_defaults()
+       # (a) min or ts
+       inpvars._ts = ask_for_ts(inpvars._ts)
+       # (b) Charge and multiplicity
+       inpvars._charge, inpvars._multipl = ask_for_ch_mtp(inpvars._charge,inpvars._multipl)
+       # (c) torsional enantiomerism
+       inpvars._enantio = ask_for_enantio(inpvars._enantio)
+       # print output
+       pp.print_question_answers(inpvars._ts,inpvars._charge,inpvars._multipl,inpvars._enantio)
+       #- - - - - - - - - - - - - - - - - - -#
+       # Read torsions from z-matrix         #
+       #- - - - - - - - - - - - - - - - - - -#
+       if os.path.exists(zmatfile):
+          torsions,cx3 = torsions_from_zmatfile(zmatfile)
+       else:
+          torsions = None
+       #- - - - - - - - - - - - - - - - - - -#
+       # Write inputfile using previous info #
+       #- - - - - - - - - - - - - - - - - - -#
+       pp.print_inpcreation(tvars.IFILE)
+       status  = inpvars.write_default(tvars.IFILE,version.PROGNAME,torsions,True)
 
-    #--------------------------#
-    #         MSHO  LL         #
-    #--------------------------#
-    if argsbools["msho"] in ["ll","all"]:
-       argsLL = (inpvars,cmatrix,"LL",dcorr)
+    # Create Gaussian templates
+    nf_gen = itf.generate_templates()
+    if nf_gen != 0: pp.print_msgGauTempl(tvars.GAUTEMPL)
+#==================================================#
+
+
+
+#==================================================#
+def main():
+
+    # Presentation and arguments
+    options  = get_options_from_prompt()
+
+    #============================#
+    # OPTION == --help           #
+    #============================#
+    if "-h" in options or "--help" in options:
+        pp.print_welcome(version.PROGNAME)
+        sprint(pp.HSTRING)
+        raise exc.END
+    #----------------------------#
+
+    #============================#
+    # OPTION == --version        #
+    #============================#
+    if "-v" in options or "--version" in options:
+        sprint(version.PROGNAME.split(".py")[0]+" "+version.PROGVER)
+        raise exc.END
+    #----------------------------#
+
+    pp.print_welcome(version.PROGNAME)
+    pp.print_user_info()
+
+    #============================#
+    # OPTION == --smiles         #
+    #============================#
+    if "--smiles" in options:
+       execute_code(option_smiles,options["--smiles"],"Cartesian coordinates from SMILES")
+       raise exc.END
+    #============================#
+
+    #============================#
+    # OPTION == --cartesian      #
+    #============================#
+    if "--cartesian" in options:
+       execute_code(option_cartesian,options["--cartesian"],"Cartesian coordinates to Z-matrix")
+       raise exc.END
+    #============================#
+
+    #============================#
+    # OPTION == --input          #
+    #============================#
+    if "--input" in options:
+      execute_code(option_input,(options["--input"],),"Input creation")
+      raise exc.END
+    #----------------------------#
+
+    #============================#
+    # NO INPUT FILE              #
+    #============================#
+    if not os.path.exists(tvars.IFILE):
+      pp.print_notfound(tvars.IFILE)
+      raise exc.END
+    #----------------------------#
+
+    inpvars,zmat,symbols,masses,cmatrix,lCH3,lNH2,ndummy,dcorr = prepare_system()
+
+    #============================#
+    # NO OPTIONS                 #
+    #============================#
+    if len(options) == 0:
+       pp.print_no_options()
+       raise exc.END
+    #----------------------------#
+
+    #============================#
+    # OPTION == --prec or --stoc #
+    #============================#
+    if "--prec" in options or "--stoc" in options:
+        inpvars = check_optmode(inpvars,ndummy)
+
+        # Preconditioned search? Stochastic search?
+        inpvars._prec = options.get("--prec",False)
+        inpvars._stoc = options.get("--stoc",[]   )
+
+        args = (inpvars,zmat,symbols,cmatrix,dcorr,lNH2)
+        execute_code(search_conformers,args,"Low-Level search")
+    #----------------------------#
+
+    #============================#
+    # OPTION == --msho ll        #
+    #============================#
+    if options.get("--msho",None) in ["ll","all"]:
+       argsLL = (inpvars,cmatrix,dcorr,"LL")
        execute_code(classify_files,argsLL,"Low-Level MSHO partition functions")
+    #----------------------------#
 
-    #--------------------------#
-    #         MSTOR LL         #
-    #--------------------------#
-    if argsbools["mstor"] in ["ll","all"]:
-       args = (inpvars,"ll",dcorr,lCH3)
+    #============================#
+    # OPTION == --mstor ll       #
+    #============================#
+    if options.get("--mstor",None) in ["ll","all"]:
+       args = (inpvars,dcorr,lCH3,"LL")
        execute_code(gen_mstor,args,"Generating MsTor input (LL)")
+    #----------------------------#
 
-    #--------------------------#
-    # HLOPT  (re-optimization) #
-    #--------------------------#
-    if argsbools["hlopt"] is not False:
-       mode_hlopt,lowerconformer,upperconformer = argsbools["hlopt"]
+    #============================#
+    # OPTION == --hlopt          #
+    #============================#
+    if "--hlopt" in options:
+       inpvars = check_optmode(inpvars,ndummy)
+       mode_hlopt,lowerconformer,upperconformer = options["--hlopt"]
        if   mode_hlopt == "0":
           args = (inpvars,cmatrix,lowerconformer,upperconformer,True,lNH2)
           execute_code(highlevel_reopt,args,"High-Level calculations")
@@ -590,28 +688,42 @@ def main():
           args = (inpvars,cmatrix,lowerconformer,upperconformer,False,lNH2)
           execute_code(highlevel_reopt,args,"Generating High-Level input files")
           raise exc.END
+    #----------------------------#
 
-    #--------------------------#
-    #         MSHO  HL         #
-    #--------------------------#
-    if argsbools["msho"] in ["hl","all"]:
-       argsHL = (inpvars,cmatrix,"HL",dcorr)
+    #============================#
+    # OPTION == --msho hl        #
+    #============================#
+    if options.get("--msho",None) in ["hl","all"]:
+       argsHL = (inpvars,cmatrix,dcorr,"HL")
        execute_code(classify_files,argsHL,"High-Level MSHO partition functions")
+    #----------------------------#
 
-    #--------------------------#
-    #         MSTOR HL         #
-    #--------------------------#
-    if argsbools["mstor"] in ["hl","all"]:
-       args = (inpvars,"hl",dcorr,lCH3)
+    #============================#
+    # OPTION == --mstor hl       #
+    #============================#
+    if options.get("--mstor",None) in ["hl","all"]:
+       args = (inpvars,dcorr,lCH3,"HL")
        execute_code(gen_mstor,args,"Generating MsTor input (HL)")
+    #----------------------------#
 
-    #--------------------------#
-    # REGEN  (regenerate data) #
-    #--------------------------#
-    if argsbools["regen"]:
-       args = (inpvars,)
+    #============================#
+    # OPTION == --regen          #
+    #============================#
+    if "--regen" in options:
+       args = (inpvars,dcorr)
        execute_code(regen_from_tmp,args,"Regenerating domains")
        raise exc.END
+    #----------------------------#
+
+    #============================#
+    # OPTION == --torsions       #
+    #============================#
+    if "--torsions" in options:
+       args = (inpvars,dcorr,zmat,cmatrix,symbols)
+       execute_code(redefine_torsions,args,"Re-defining torsions")
+       raise exc.END
+    #----------------------------#
+
 #==================================================#
 
 
@@ -629,10 +741,38 @@ if __name__ == '__main__':
    except exc.ErrorTorsionRepe as error:
        EXITMESS = "\n    Target torsion (torsion%s) is duplicated in input file!\n"%error._var
        print(EXITMESS)
-   except        :
-       EXITMESS = "\n  ERROR while executing %s!\n"%tvars.PROGNAMEnopy
+       EXITMESS = "\n  ERROR while executing %s!\n"%version.PROGNAMEnopy
        print(EXITMESS)
        print_error()
+   except exc.WrongDimension as exception:
+       sprint("ERROR! Wrong dimension in file '%s'!"%inpvars._pcfile,tvars.NIBS2)
+       sprint("First line of file contains %i torsion(s)!"%exception._ntor,tvars.NIBS2+7)
+       sprint("--> %s "%exception._fline,tvars.NIBS2+7)
+       sprint("Line which causes this error:",tvars.NIBS2+7)
+       sprint("--> %s "%exception._line,tvars.NIBS2+7)
+       sprint()
+       raise exc.END
+   except exc.StocSearchWrongDim as exception:
+       sprint("ERROR! Wrong dimension in stochastic vector!",tvars.NIBS2)
+       sprint("Input    dimension: %i (%s)"%(exception._dim[0],exception._vec),tvars.NIBS2+7)
+       sprint("Expected dimension: %i"%exception._dim[1],tvars.NIBS2+7)
+       sprint()
+       raise exc.END
+   except exc.UnableGenRandAng as exception:
+        sprint("ERROR! Unable to generate valid random angle!",tvars.NIBS2)
+        if len(exception._domain) == 0:
+           sprint("Empty domain for one of the torsions!",tvars.NIBS2+7)
+        else:
+           the_domain = "U".join(["(%.0f,%.0f)"%(p1,p2) for p1,p2 in exception._domain])
+           sprint("Domain for torsion: %s"%the_domain,tvars.NIBS2+7)
+        sprint()
+        raise exc.END
+   except exc.ErrorHConstraint:
+        sprint("ERROR! Problem(s) when checking hard constraint(s)!\n",tvars.NIBS2)
+        raise exc.END
+   except exc.ErrorSConstraint:
+        sprint("ERROR! Problem(s) when checking soft constraint(s)!\n",tvars.NIBS2)
+        raise exc.END
 #==================================================#
     
 

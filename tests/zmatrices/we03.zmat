@@ -1,65 +1,64 @@
- c
- c    1 cc2     
- c    2 cc3         1 ccc3      
- c    3 cc4         2 ccc4          1 dih4   
- n    4 nc5         3 ncc5          2 dih5   
- c    1 cc6         2 ccc6          5 dih6   
- o    6 oc7         1 occ7          2 dih7   
- h    7 ho8         6 hoc8          1 dih8   
- o    6 oc9         1 occ9          7 dih9   
- h    1 hc10        2 hcc10         5 dih10  
- h    2 hc11        1 hcc11         3 dih11  
- h    2 hc12        1 hcc12         3 dih12  
- h    3 hc13        2 hcc13         4 dih13  
- h    3 hc14        2 hcc14         4 dih14  
- h    4 hc15        3 hcc15         5 dih15  
- h    4 hc16        3 hcc16         5 dih16  
- h    5 hn17        4 hnc17         1 dih17  
- 
-cc2           1.500
-cc3           1.500
-ccc3        109.471
-cc4           1.500
-ccc4        109.471
-dih4          0.000
-nc5           1.500
-ncc5        109.471
-dih5          0.000
-cc6           1.500
-ccc6        109.471
-dih6       -120.000
-oc7           1.500
-occ7        109.471
-dih7        180.000
-ho8           1.070
-hoc8        109.471
-dih8        180.000
-oc9           1.380
-occ9        109.471
-dih9        180.000
-hc10          1.070
-hcc10       109.471
-dih10       120.000
-hc11          1.070
-hcc11       109.471
-dih11       120.000
-hc12          1.070
-hcc12       109.471
-dih12       240.000
-hc13          1.070
-hcc13       109.471
-dih13       120.000
-hc14          1.070
-hcc14       109.471
-dih14       240.000
-hc15          1.070
-hcc15       109.471
-dih15       120.000
-hc16          1.070
-hcc16       109.471
-dih16       240.000
-hn17          1.030
-hnc17       109.471
-dih17       240.000
- 
- 
+ C 
+ C    1   dist02
+ C    2   dist03   1   angl03
+ N    3   dist04   2   angl04   1   rtor04
+ C    4   dist05   3   angl05   2   rtor05
+ C    3   dist06   2   angl06   4   itor06
+ O    6   dist07   3   angl07   2   ptor07
+ O    6   dist08   3   angl08   7   itor08
+ H    8   dist09   6   angl09   3   ptor09
+ H    1   dist10   2   angl10   5   itor10
+ H    1   dist11   2   angl11   5   itor11
+ H    2   dist12   1   angl12   3   itor12
+ H    2   dist13   1   angl13   3   itor13
+ H    3   dist14   2   angl14   4   itor14
+ H    4   dist15   3   angl15   5   itor15
+ H    5   dist16   4   angl16   1   itor16
+ H    5   dist17   4   angl17   1   itor17
+
+dist02      1.53610
+dist03      1.53270
+angl03     98.21009
+dist04      1.45095
+angl04     99.08367
+rtor04    -52.81725
+dist05      1.44026
+angl05    105.03107
+rtor05     44.90310
+dist06      1.45545
+angl06    112.82258
+itor06   -120.47697
+dist07      1.25589
+angl07    120.38173
+ptor07    111.76265
+dist08      1.38349
+angl08    120.30303
+itor08   -179.99788
+dist09      1.01368
+angl09    122.71892
+ptor09    163.98786
+dist10      1.12971
+angl10    105.37559
+itor10   -115.40032
+dist11      1.09104
+angl11    112.23178
+itor11    121.80855
+dist12      1.10777
+angl12    107.46667
+itor12   -113.31882
+dist13      1.08457
+angl13    112.42331
+itor13    119.02609
+dist14      1.10951
+angl14    106.61485
+itor14    113.38453
+dist15      1.03622
+angl15    113.22849
+itor15    124.26138
+dist16      1.11402
+angl16    109.38802
+itor16    122.61645
+dist17      1.11653
+angl17    108.53316
+itor17   -121.16555
+

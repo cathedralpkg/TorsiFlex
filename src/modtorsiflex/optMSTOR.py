@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  optMSTOR           |
-| Last Update:  2021/11/22 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -45,14 +45,14 @@ import numpy as np
 import common.internal   as intl
 import common.gaussian   as gau
 import common.fncs       as fncs
-from   common.pgs        import get_pgs
+import common.files      as ff
 #--------------------------------------------------#
-import modtorsiflex.tfrw     as rw
-import modtorsiflex.printing    as pp
-import modtorsiflex.tfhelper      as tfh
-from   modtorsiflex.tfvars        import NIBS2, DIRMSTOR
-from   modtorsiflex.printing    import sprint
-from   modtorsiflex.tpespoint   import TorPESpoint
+import modtorsiflex.tfrw      as rw
+import modtorsiflex.printing  as pp
+import modtorsiflex.tfhelper  as tfh
+from   modtorsiflex.tfvars    import NIBS2, DIRMSTOR
+from   modtorsiflex.printing  import sprint
+from   modtorsiflex.tpespoint import TorPESpoint
 #==================================================#
 
 
@@ -146,6 +146,7 @@ def calculate_mj(inpvars,strconfs,weights,allconfs,denantio):
     # update frequency for (Mj,sigma_j) & max number of iterations
     #UPDATEFREQ, MAXITER = ntor  *10**3, ntor  *(2*10**5)
     UPDATEFREQ, MAXITER = nconfs*10**2, nconfs*10**5
+
     # Calculate Mj's
     Ntot = 0
     while True:
@@ -163,7 +164,7 @@ def calculate_mj(inpvars,strconfs,weights,allconfs,denantio):
         # Calculate Mj and sigma_j
         if Ntot % UPDATEFREQ == 0:
            # correct Nj with weight
-           llNj  = [1.0*Nj/wj for Nj,wj in zip(lNj,lwj)]
+           llNj  = 1.0 * lNj/lwj
            # calculate Mj and sigma(Mj)
            llMj  = [(1.0*Ntot/Nj)**(1.0/ntor) if Nj != 0 else np.inf for Nj in llNj]
            llsj  = [ Mj/ntor/np.sqrt(Nj) if Nj != 0 else 0 for Nj,Mj in zip(llNj,llMj)]
@@ -183,11 +184,11 @@ def calculate_mj(inpvars,strconfs,weights,allconfs,denantio):
     # return data
     return {strconf:Mj for strconf,Mj in zip(strconfs,llMj)}, notvisited
 #--------------------------------------------------#
-def gen_mstor(inpvars,case,dcorr,lCH3=[]):
-    if case == "ll":
+def gen_mstor(inpvars,dcorr,lCH3=[],level="LL"):
+    if level == "LL":
         folder   = inpvars._dirll
         freqscal = inpvars._freqscalLL
-    elif case == "hl":
+    elif level == "HL":
         folder   = inpvars._dirhl
         freqscal = inpvars._freqscalHL
 
@@ -195,67 +196,55 @@ def gen_mstor(inpvars,case,dcorr,lCH3=[]):
     if not os.path.exists(folder):
        pp.print_dirnotfound(folder,NIBS2,1)
        return
+
     # Create folder for mstor files
     tfh.create_dir(folder+DIRMSTOR)
 
     # list of points
-    logs   = [log for log in os.listdir(folder)  if log.endswith(".log")]
-    points = [TorPESpoint(log.split(".")[1]) for log in logs]
-
+    gtss   = [gts for gts in os.listdir(folder)  if gts.endswith(".gts")]
+    points = [TorPESpoint(gts.split(".")[1]) for gts in gtss]
+    
     # no files?
-    if len(logs) == 0:
-       sprint("There are no log files inside folder '%s'"%folder,NIBS2,1)
+    if len(gtss) == 0:
+       sprint("There are no gts files inside folder '%s'"%folder,NIBS2,1)
        return
 
     #----------------#
-    # Read log files #
+    # Read gts files #
     #----------------#
-    sprint("Reading log files...",NIBS2,1)
+    sprint("Reading gts files...",NIBS2,1)
     geoms    = []
     weights  = {}
     strconfs = []
     allconfs = []
     denantio = {}
-    for log,point in zip(logs,points):
-        logdata   = gau.read_gaussian_log(folder+log,target_level=None)
+    ATONUMS   = None
+    for gts,point in zip(gtss,points):
 
-        ch        = logdata[2]
-        mtp       = logdata[3]
-        symbols   = logdata[4]
-        xcc       = logdata[5]
-        gcc       = logdata[6]
-        Fcc       = logdata[7]
-        V0        = logdata[8]
-        zmat      = logdata[10]
-
-        if zmat is None:
-           zmat = gau.zmat_from_loginp(folder+log)
-
-        (lzmat,zmatvals,zmatatoms), symbols = gau.convert_zmat(zmat)
+        # Read gts
+        xcc,atonums,ch,mtp,V0,gcc,Fcc,masses,pgroup,rotsigma,freq_list = ff.read_gtsfile(folder+gts)
+        if ATONUMS is None: ATONUMS = atonums
 
         # same current point
         strconfs.append(str(point))
         allconfs.append(point)
-        # correct symbols (just in case)
-        symbols,atonums = fncs.symbols_and_atonums(symbols)
-        # Data without dummies
-        symbols_wo,xcc_wo = fncs.clean_dummies(symbols,xcc=list(xcc))
-        symbols_wo,gcc_wo = fncs.clean_dummies(symbols,gcc=list(gcc))
-        symbols_wo,Fcc_wo = fncs.clean_dummies(symbols,Fcc=list(Fcc))
 
-        # calculate weight
-        atonums_wo = fncs.symbols2atonums(symbols_wo)
-        masses_wo  = fncs.symbols2masses(symbols_wo)
-        pgroup, rotsigma = get_pgs(atonums_wo,masses_wo,xcc_wo)
+        # Get weight
         if inpvars._enantio and pgroup.lower() == "c1":
            weight  = 2
+           # Read zmat file
+           zmatfile = gts.replace(".gts",".zmat")
+           (lzmat,zmatvals,zmatatoms), symbols, masses = ff.read_zmat(folder+zmatfile)
+           # Get enantiomer
            enantio = tfh.enantiovec(lzmat,zmatvals,dcorr,inpvars)
+           # Save enantio
            allconfs.append( enantio)
            denantio[str(enantio)] = str(point)
         else:
            weight = 1
+
         # save data
-        geoms.append( (V0,xcc_wo,gcc_wo,Fcc_wo,str(point)) )
+        geoms.append( (V0,xcc,gcc,Fcc,str(point)) )
         weights[str(point)] = weight
     geoms.sort()
 
@@ -264,8 +253,14 @@ def gen_mstor(inpvars,case,dcorr,lCH3=[]):
     # calculate M_{j,tau} values #
     #----------------------------#
     sprint("Calculating M_{j,tau} values using Monte-Carlo...",NIBS2)
+
+    symbols,atonums = fncs.symbols_and_atonums(ATONUMS)
+    masses = fncs.symbols2masses(symbols)
     dMj,notvisited = calculate_mj(inpvars,strconfs,weights,allconfs,denantio)
+
     sprint()
+
+
     # clean geoms
     geoms = [geom_tuple for geom_tuple in geoms if geom_tuple[-1] not in notvisited]
 
@@ -273,43 +268,39 @@ def gen_mstor(inpvars,case,dcorr,lCH3=[]):
     # Internal coordinates #
     #----------------------#
     nrics = None
-    symbols = symbols_wo
-    if True:
-       # Generate non-redundant internal coordinates
-       torsions    = [inpvars._tatoms[X] for X in inpvars._ttorsions]
-       masses      = fncs.symbols2masses(symbols)
-       list_xcc    = [fncs.shift2com(xcc,masses) for (V0,xcc,gcc,Fcc,point) in geoms]
-       list_gcc    = [gcc                        for (V0,xcc,gcc,Fcc,point) in geoms]
-       list_Fcc    = [Fcc                        for (V0,xcc,gcc,Fcc,point) in geoms]
-       list_ccfrqs = [fncs.calc_ccfreqs(Fcc,masses,xcc)[0] for xcc,Fcc in zip(list_xcc,list_Fcc)]
+    torsions    = [inpvars._tatoms[X] for X in inpvars._ttorsions]
+    list_xcc    = [fncs.shift2com(xcc,masses) for (V0,xcc,gcc,Fcc,point) in geoms]
+    list_gcc    = [gcc                        for (V0,xcc,gcc,Fcc,point) in geoms]
+    list_Fcc    = [Fcc                        for (V0,xcc,gcc,Fcc,point) in geoms]
+    list_ccfrqs = [fncs.calc_ccfreqs(Fcc,masses,xcc)[0] for xcc,Fcc in zip(list_xcc,list_Fcc)]
 
-       # Update torsions with CH3s
-       torsions = torsions+lCH3
+    # Update torsions with CH3s
+    torsions = torsions+lCH3
+    sprint()
+    # (a) generate redundant internal coordinates
+    sprint("Trying to generate valid redundant set of internal coordinates...",NIBS2)
+    nvdof = len(list_ccfrqs[0])
+    sprint("number of vib. degrees of freedom: %i"%nvdof,NIBS2+4)
+    idata_rics = (list_xcc,list_gcc,list_Fcc,list_ccfrqs,symbols,masses,torsions)
+    rics       = valid_redundant_set(*idata_rics)
+    nrics      = None
+    num_ics    = None
+    if rics is not None:
+       num_ics = intl.count_ics(rics)
+       sprint("number of internal coordinates   : %i"%num_ics,NIBS2+4)
        sprint()
-       # (a) generate redundant internal coordinates
-       sprint("Trying to generate valid redundant set of internal coordinates...",NIBS2)
-       nvdof = len(list_ccfrqs[0])
+    
+    # (b) generate non-redundant internal coordinates
+    if num_ics == nvdof: nrics = rics
+    elif rics is not None:
+       sprint("Trying to generate valid non-redundant set of internal coordinates...",NIBS2)
        sprint("number of vib. degrees of freedom: %i"%nvdof,NIBS2+4)
-       idata_rics = (list_xcc,list_gcc,list_Fcc,list_ccfrqs,symbols,masses,torsions)
-       rics       = valid_redundant_set(*idata_rics)
-       nrics      = None
-       num_ics    = None
-       if rics is not None:
-          num_ics = intl.count_ics(rics)
+       idata_nrics = (rics,list_xcc,list_gcc,list_Fcc,list_ccfrqs,symbols,masses,torsions)
+       nrics       = valid_nonredundant_set(*idata_nrics)
+       if nrics is not None:
+          num_ics = intl.count_ics(nrics)
           sprint("number of internal coordinates   : %i"%num_ics,NIBS2+4)
-          sprint()
-       
-       # (b) generate non-redundant internal coordinates
-       if num_ics == nvdof: nrics = rics
-       elif rics is not None:
-          sprint("Trying to generate valid non-redundant set of internal coordinates...",NIBS2)
-          sprint("number of vib. degrees of freedom: %i"%nvdof,NIBS2+4)
-          idata_nrics = (rics,list_xcc,list_gcc,list_Fcc,list_ccfrqs,symbols,masses,torsions)
-          nrics       = valid_nonredundant_set(*idata_nrics)
-          if nrics is not None:
-             num_ics = intl.count_ics(nrics)
-             sprint("number of internal coordinates   : %i"%num_ics,NIBS2+4)
-          sprint()
+       sprint()
 
     #-------------------------#
     # Write ms-tor input file #

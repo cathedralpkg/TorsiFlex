@@ -31,57 +31,49 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 *----------------------------------*
 | Module     :  common             |
-| Sub-module :  interpolate        |
-| Last Update:  2020/02/03 (Y/M/D) |
+| Sub-module :  torsions           |
+| Last Update:  2022/07/04 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
+
 '''
 
-#=============================================#
-from   common.Spline  import Spline
-#=============================================#
-
 
 #=============================================#
-#     Functions related to interpolations     #
-#=============================================#
-def interpolate(xvalues,yvalues,x,d=0):
-    spl = Spline(xvalues,yvalues,tension=0.0)
-    if d == 0: return spl(x)
-    # get derivative
-    return spl(x), spl.derivative(x)
+import os
+import numpy as np
 #---------------------------------------------#
-def interpolate_nones(xx,yy,mode="cubic"):
-    '''
-    element to correct in yy is given as None
-    '''
-    npts = len(yy)
-    # correct Nones with spline
-    if mode == "cubic":
-       # create spline
-       copy_xx = [x for idx,x in enumerate(xx) if yy[idx] is not None]
-       copy_yy = [y for idx,y in enumerate(yy) if yy[idx] is not None]
-       spl     = Spline(copy_xx,copy_yy,tension=0.0)
-       # interpolate
-       for idx in range(npts):
-           x,y = xx[idx],yy[idx]
-           if y is not None: continue
-           yy[idx] = spl(x)
-    # correct Nones with linear interpolation
-    if mode == "linear":
-       for ii in range(npts):
-           x,y = xx[ii], yy[ii]
-           if y is not None: continue
-           idx0 = ii -1
-           idx2 = None
-           for jj in range(ii,npts):
-               if yy[jj] is not None: idx2 = jj; break
-           if idx2 is None: continue
-           # interpolate
-           x0 , y0 = xx[idx0], yy[idx0]
-           x2 , y2 = xx[idx2], yy[idx2]
-           tangent = (y2-y0)/(x2-x0)
-           yy[ii]  = y0 + tangent * (x-x0)
-    return yy
+import common.Exceptions as     Exc
+from   common.fncs       import xyz
+from   common.fncs       import clean_lines
+from   common.fncs       import atonums2masses
+from   common.files      import read_file
 #=============================================#
+
+
+#=============================================#
+def torsion_of_cx3(atoms,symbols,cmatrix,out=0):
+    at1,at2,at3,at4 = atoms
+    # torsion (X)3-C-A-...
+    for C,A in [(at2,at3),(at3,at2)]:
+        # Check C is a C atom
+        if symbols[C] != "C": continue
+        # Check C atom is bonded to 3 atoms (excluding A)
+        Xs = [X for X,bonded in enumerate(cmatrix[C]) if bonded and X != A]
+        if len(Xs) != 3: continue
+        # Check the 3 Xs are equal
+        symbols_Xs = set([symbols[X] for X in Xs])
+        if len(symbols_Xs) != 1: continue
+        # Check each X is only bonded to C
+        bonded_Xs = set([list(cmatrix[X]).count(True) for X in Xs])
+        if len(bonded_Xs)  != 1: continue
+        if bonded_Xs.pop() != 1: continue
+        # WE DO HAVE A CX3!!
+        if out == 0: return True
+        else       : return Xs
+    # No CX3 group involved in rotation
+    if out == 0: return False
+    else       : return None
+#=============================================#
+
 

@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +32,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 *----------------------------------*
 | Module     :  modtorsiflex       |
 | Sub-module :  tpespoint          |
-| Last Update:  2021/11/22 (Y/M/D) |
+| Last Update:  2022/07/12 (Y/M/D) |
 | Main Author:  David Ferro-Costas |
 *----------------------------------*
 
@@ -41,16 +41,18 @@ class for TorsiFlex
 '''
 
 #===================================================#
+import numpy       as np
+#---------------------------------------------------#
 import common.fncs as fncs
 #===================================================#
 
 #===================================================#
 #       Torsional vector in different formats       #
 #===================================================#
-def ivec2fvec(ivec): return [float(angle)      for angle in ivec]
-def fvec2ivec(fvec): return [int(round(angle)) for angle in fvec]
-def svec2fvec(svec): return [float(angle)      for angle in svec.split("_")]
-def svec2ivec(svec): return [int(angle)        for angle in svec.split("_")]
+def ivec2fvec(ivec): return np.array([float(angle)      for angle in ivec           ])
+def fvec2ivec(fvec): return np.array([int(round(angle)) for angle in fvec           ])
+def svec2fvec(svec): return np.array([float(angle)      for angle in svec.split("_")])
+def svec2ivec(svec): return np.array([int(angle)        for angle in svec.split("_")])
 def ivec2svec(ivec): return "_".join([ "%003i"%(round(angle)%360)  for angle in ivec])
 def fvec2svec(fvec): return "_".join(["%003.f"%(round(angle)%360)  for angle in fvec])
 #===================================================#
@@ -71,8 +73,8 @@ class TorPESpoint():
           self._dim  = len(self._fvec)
           # limits for each angle
           if cycle is None: self._cycle = [360 for idx in range(self._dim)]
-          else            : self._cycle = cycle
-          self._fvec = [vi%li for vi,li in zip(self._fvec,self._cycle)]
+          else            : self._cycle = np.array(cycle)
+          self._fvec = self._fvec % self._cycle
           # Now, get the other versions of the vector
           self._ivec = fvec2ivec(self._fvec)
           self._svec = ivec2svec(self._ivec)
@@ -80,14 +82,14 @@ class TorPESpoint():
       def __str__(self): return self._svec
 
       def fvec_in_180(self):
-         fvec = [angle if angle <= 180 else angle-360.0 for angle in self._fvec]
-         return fvec
+          '''returns vector with angles in (-180,180)'''
+          return np.array([angle if angle <= 180 else angle-360.0 for angle in self._fvec])
 
       def abs_diff(self,point):
           diff = [None for idx in range(self._dim)]
           for idx in range(self._dim):
-              args   = (self._fvec[idx],point._fvec[idx])
-              kwargs = {"u": "deg", "limit": self._cycle[idx]}
+              args      = (self._fvec[idx],point._fvec[idx])
+              kwargs    = {"u": "deg", "limit": self._cycle[idx]}
               diff[idx] = fncs.angular_dist(*args,**kwargs)
           return diff
 
@@ -124,9 +126,11 @@ class TorPESpoint():
           return False, None
 
       def is_in_domain(self,tdomain):
+          idx = 0
           for angle,domain in zip(self._fvec,tdomain):
-              if not fncs.float_in_domain(angle,domain): return False
-          return True
+              if not fncs.float_in_domain(angle,domain): return False, idx
+              idx += 1
+          return True, None
 
       def closest(self,points,mode=1):
           if len(points) == 0: return None
@@ -164,12 +168,12 @@ class TorPESpoint():
 
 def tests():
     cycle = (360,360,120)
-    pp1 = TorPESpoint( (90,180,+50) ,cycle)
-    print("pp1:", pp1)
-    print("nomenclature:",pp1.nomenclature())
-    print("")
-    pp2 = TorPESpoint( (85,190,-40),cycle )
-    print("pp2:", pp2)
+    pp1 = TorPESpoint( ( 90,180,+50) ,cycle)
+    pp2 = TorPESpoint( ( 85,190,-40),cycle )
+    pp3 = TorPESpoint( (270,180,-50),cycle )
+    print("pp1: %s (%s)"%(str(pp1),pp1.nomenclature()))
+    print("pp2: %s (%s)"%(str(pp2),pp2.nomenclature()))
+    print("pp3: %s (%s)"%(str(pp3),pp3.nomenclature()))
     print("")
     print("pp1 - pp2:", pp1.abs_diff(pp2))
     print("pp2 - pp1:", pp2.abs_diff(pp1))
@@ -177,12 +181,11 @@ def tests():
     print("distance:",pp1.distance(pp2))
     print("distance:",pp1.distance_if_smaller(pp2,1))
     print("")
+    print("pp1 - pp3:", pp1.abs_diff(pp3))
     print("")
-    pp3 = TorPESpoint( (270,180,-50),cycle )
-    print("diff:", pp1.abs_diff(pp3))
     suma = [a+b for a,b in zip(pp1._fvec,pp3._fvec)]
     pp4 = TorPESpoint(suma,cycle)
-    print("sum: ",pp4)
+    print("pp4 = pp1 + pp3 : ",pp4)
 
 
 

@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -494,7 +494,7 @@ def gen_enantio_and_correlate(xcc,symbols,masses=None,fconnect=1.3,pp=False):
 if __name__ == '__main__':
 
    from   common.files    import read_xyz
-   from   common.files    import read_xyz_zmat
+   from   common.files    import read_zmat
    from   common.files    import write_xyz
    from   common.pgs      import get_pgs
 
@@ -507,7 +507,7 @@ if __name__ == '__main__':
        try:
           xcc, symbols, masses = read_xyz(xyz)
        except:
-          (lzmat,zmatvals,zmatatoms), symbols, masses = read_xyz_zmat(xyz)
+          (lzmat,zmatvals,zmatatoms), symbols, masses = read_zmat(xyz)
           xcc = intl.zmat2xcc(lzmat,zmatvals)
        # point group
        pg, rotsigma = get_pgs(symbols,masses,xcc)

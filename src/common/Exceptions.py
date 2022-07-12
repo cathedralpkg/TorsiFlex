@@ -4,10 +4,10 @@
 ---------------------------
 
 Program name: TorsiFlex
-Version     : 2021.3
+Version     : 2022.1
 License     : MIT/x11
 
-Copyright (c) 2021, David Ferro Costas (david.ferro@usc.es) and
+Copyright (c) 2022, David Ferro Costas (david.ferro@usc.es) and
 Antonio Fernandez Ramos (qf.ramos@usc.es)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -41,51 +41,52 @@ raise exceptions
 '''
 
 #=============================================#
-class END(Exception)             : pass
-class ABORTED(Exception)         : pass
-class FileType(Exception)        : pass
-class ReadProblem(Exception)     : pass
-class UnknownSoft(Exception)     : pass
-class UnknownKey(Exception)      : pass
-class ExeNotDef(Exception)       : pass
-class ExeNotFound(Exception)     : pass
-class CalcFails(Exception)       : pass
-class RstReadProblem(Exception)  : pass
-class RstDiffTS(Exception)       : pass
-class RstDiffPoint(Exception)    : pass
-class NoDLEVELdata(Exception)    : pass
-class RstDiffVar(Exception)      : pass
-class SDpmNoHess(Exception)      : pass
-class SDdiffds(Exception)        : pass
-class NoICS(Exception)           : pass
-class NoTemps(Exception)         : pass
-class NoData(Exception)          : pass
-class IncompData(Exception)      : pass
-class WrongVar(Exception)        : pass
-class WrongInIsomass(Exception)  : pass
-class NoDLEVELpfn(Exception)     : pass
-class DLEVELsthWrong(Exception)  : pass
-class ICFails(Exception)         : pass
-class NoTemplateGiven(Exception) : pass
-class NoReacMol(Exception)       : pass
-class LostConformer(Exception)   : pass
-class DiffMassConf(Exception)    : pass
-class LackOfGts(Exception)       : pass
-class NoRateCons(Exception)      : pass
-class OnlyMEP(Exception)         : pass
-class TSnotFOUND(Exception)      : pass
-class NoGTSfile(Exception)       : pass
-class FileIsNotGTS(Exception)    : pass
-class FccNotFound(Exception)     : pass
-class LevelNotFound(Exception)   : pass
-class WrongDimension(Exception)  : pass
-class WrongONIOMlayers(Exception): pass
-class UnableGenRandAng(Exception): pass
-class ErrorHConstraint(Exception): pass
-class ErrorSConstraint(Exception): pass
-class ErrorQRC(Exception)        : pass
-class ErrorTorsion1(Exception)   : pass
-class ErrorTorsionN(Exception)   : pass
-class ErrorTorsionRepe(Exception): pass
+class END(Exception)               : pass
+class ABORTED(Exception)           : pass
+class FileType(Exception)          : pass
+class ReadProblem(Exception)       : pass
+class UnknownSoft(Exception)       : pass
+class UnknownKey(Exception)        : pass
+class ExeNotDef(Exception)         : pass
+class ExeNotFound(Exception)       : pass
+class CalcFails(Exception)         : pass
+class RstReadProblem(Exception)    : pass
+class RstDiffTS(Exception)         : pass
+class RstDiffPoint(Exception)      : pass
+class NoDLEVELdata(Exception)      : pass
+class RstDiffVar(Exception)        : pass
+class SDpmNoHess(Exception)        : pass
+class SDdiffds(Exception)          : pass
+class NoICS(Exception)             : pass
+class NoTemps(Exception)           : pass
+class NoData(Exception)            : pass
+class IncompData(Exception)        : pass
+class WrongVar(Exception)          : pass
+class WrongInIsomass(Exception)    : pass
+class NoDLEVELpfn(Exception)       : pass
+class DLEVELsthWrong(Exception)    : pass
+class ICFails(Exception)           : pass
+class NoTemplateGiven(Exception)   : pass
+class NoReacMol(Exception)         : pass
+class LostConformer(Exception)     : pass
+class DiffMassConf(Exception)      : pass
+class LackOfGts(Exception)         : pass
+class NoRateCons(Exception)        : pass
+class OnlyMEP(Exception)           : pass
+class TSnotFOUND(Exception)        : pass
+class NoGTSfile(Exception)         : pass
+class FileIsNotGTS(Exception)      : pass
+class FccNotFound(Exception)       : pass
+class LevelNotFound(Exception)     : pass
+class WrongDimension(Exception)    : pass
+class WrongONIOMlayers(Exception)  : pass
+class UnableGenRandAng(Exception)  : pass
+class ErrorHConstraint(Exception)  : pass
+class ErrorSConstraint(Exception)  : pass
+class ErrorQRC(Exception)          : pass
+class ErrorTorsion1(Exception)     : pass
+class ErrorTorsionN(Exception)     : pass
+class ErrorTorsionRepe(Exception)  : pass
+class StocSearchWrongDim(Exception): pass
 #=============================================#
 
